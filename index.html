@@ -1,0 +1,2966 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>鉄骨加工・出荷進捗管理システム - 中出鉄工株式会社</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Phosphor Icons for Industrial & Modern CAD/Logistics feel -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- SheetJS CDN (Excel .xlsx / .xls / .csv parsing in browser) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f5fa',
+              100: '#e1ecf5',
+              500: '#1e3a5f',
+              600: '#152b47',
+              700: '#0e1e32',
+              accent: '#d97706',
+              accentHover: '#b45309'
+            },
+            status: {
+              pending: '#64748b',
+              drafting: '#0284c7',
+              processing: '#ea580c',
+              completed: '#059669',
+              hold: '#dc2626',
+              yard: '#7c3aed',
+              shipped: '#10b981'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom Scrollbar for heavy member tables */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    .custom-backdrop {
+      background-color: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col font-sans antialiased select-none">
+
+  <header class="bg-brand-600 text-white shadow-md border-b-2 border-brand-accent sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center border border-white/20 shadow-inner">
+          <i class="fa-solid fa-shapes text-amber-400 text-xl"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-bold text-lg tracking-wider text-white">中出鉄工株式会社</span>
+            <span class="text-xs bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-medium">鉄骨加工・出荷管理</span>
+          </div>
+          <p class="text-[11px] text-slate-300">加工図進捗 × ヤード待機 × 現場出荷一元化</p>
+        </div>
+      </div>
+
+      <!-- User Session & Quick Actions -->
+      <div id="header-user-panel" class="hidden flex items-center space-x-4">
+        <div class="text-right hidden sm:block">
+          <div class="flex items-center space-x-1.5 justify-end">
+            <span id="header-user-role" class="text-[10px] bg-brand-500 border border-white/20 text-slate-200 px-2 py-0.5 rounded uppercase font-semibold">STAFF</span>
+            <span id="header-user-name" class="text-sm font-semibold text-white">担当者</span>
+          </div>
+          <span id="connection-status-badge" class="inline-flex items-center text-[11px] text-emerald-300">
+            <span id="connection-status-dot" class="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1"></span>
+            <span id="connection-status-text">最新データ同期済</span>
+          </span>
+        </div>
+        
+        <button id="btn-open-gas-settings" title="接続設定・GASエンドポイント" class="p-2 text-slate-300 hover:text-white bg-brand-500/50 hover:bg-brand-500 rounded-lg transition-colors border border-white/10">
+          <i class="fa-solid fa-gear text-base"></i>
+        </button>
+
+        <button id="btn-logout" title="ログアウト（端末セッションを破棄）" class="p-2 text-slate-300 hover:text-red-300 bg-brand-500/50 hover:bg-red-900/40 rounded-lg transition-colors border border-white/10">
+          <i class="fa-solid fa-right-from-bracket text-base"></i>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div id="toast-container" class="fixed top-20 right-4 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+  <!-- Main View Area -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col">
+
+    <section id="view-login" class="flex-1 flex items-center justify-center py-10">
+      <div class="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+        <div class="bg-brand-500 p-6 text-white text-center border-b border-brand-600">
+          <div class="inline-flex p-3 rounded-2xl bg-white/10 mb-3 border border-white/20">
+            <i class="fa-solid fa-hard-hat text-3xl text-amber-400"></i>
+          </div>
+          <h2 class="text-xl font-bold">鉄骨業務システム 認証</h2>
+          <p class="text-xs text-slate-300 mt-1">スプレッドシート登録の担当者名とコードを入力</p>
+        </div>
+
+        <form id="form-login" class="p-6 sm:p-8 space-y-5">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              <i class="fa-solid fa-id-badge mr-1 text-brand-500"></i> ログインユーザー氏名（_Usersシート登録）
+            </label>
+            <input type="text" id="login-name" required placeholder="例: 中出 太郎" 
+                   autocomplete="name"
+                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm transition-all outline-none">
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+              <i class="fa-solid fa-key mr-1 text-brand-500"></i> 認証コード (半角英数)
+            </label>
+            <input type="password" id="login-code" required placeholder="例: STEEL2026" 
+                   autocomplete="current-password"
+                   class="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 text-sm transition-all outline-none">
+          </div>
+
+          <div class="bg-sky-50 rounded-lg p-3 border border-sky-200 text-xs text-sky-900 space-y-1">
+            <div class="flex items-center space-x-1.5 font-bold text-sky-800">
+              <i class="fa-solid fa-clock-rotate-left text-sky-600"></i>
+              <span>端末保持（24時間セッション）機能有効:</span>
+            </div>
+            <p class="text-[11px] leading-relaxed text-slate-700">
+              この端末で一度認証すると、24時間は画面を開くだけで自動入場できます。<br>
+              （※右上の「ログアウト」ボタンを押すと即座に解除されます）
+            </p>
+          </div>
+
+          <div class="bg-amber-50 rounded-lg p-3 border border-amber-200 text-xs text-amber-900 space-y-1">
+            <div class="flex items-center space-x-1.5 font-bold text-amber-800">
+              <i class="fa-solid fa-circle-info text-amber-600"></i>
+              <span>認証ユーザーと加工担当者の区別:</span>
+            </div>
+            <p class="text-[11px] leading-relaxed text-slate-700">
+              ここはログイン用の <strong>_Users</strong> シートに登録した氏名を入力します。<br>
+              （※工場の加工担当者マスタ <strong>_Fabricators</strong> の氏名ではありません）
+            </p>
+          </div>
+
+          <button type="submit" id="btn-submit-login" 
+                  class="w-full py-3 bg-brand-500 hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-lg shadow-md transition-all flex items-center justify-center space-x-2">
+            <i class="fa-solid fa-arrow-right-to-bracket"></i>
+            <span>認証して入場</span>
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <section id="view-dashboard" class="hidden flex-col space-y-6">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
+        <div>
+          <h1 class="text-xl font-extrabold text-slate-900 flex items-center space-x-2">
+            <span>進行中 物件一覧</span>
+            <span id="badge-project-count" class="text-xs bg-slate-200 text-slate-700 px-2.5 py-0.5 rounded-full font-bold">0 物件</span>
+          </h1>
+          <p class="text-xs text-slate-500 mt-0.5">現場建方日・出荷状況をリアルタイムで追跡</p>
+        </div>
+
+        <div class="flex items-center space-x-3">
+          <button id="btn-new-project" class="inline-flex items-center px-4 py-2.5 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-white font-bold text-sm rounded-lg shadow transition-all">
+            <i class="fa-solid fa-folder-plus mr-2"></i> 新規物件登録
+          </button>
+        </div>
+      </div>
+
+      <!-- Project Cards Grid -->
+      <div id="project-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <!-- Project cards injected via JavaScript -->
+      </div>
+    </section>
+
+    <section id="view-project-detail" class="hidden flex-col space-y-5">
+      <!-- Breadcrumb & Project Toolbar -->
+      <div class="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="flex items-center space-x-3">
+          <button id="btn-back-to-dashboard" class="p-2 text-slate-500 hover:text-brand-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors" title="物件一覧へ戻る">
+            <i class="fa-solid fa-arrow-left text-lg"></i>
+          </button>
+          <div>
+            <div class="flex items-center space-x-2">
+              <h2 id="current-project-name" class="text-lg font-bold text-slate-900">物件名称</h2>
+              <span id="current-project-status" class="px-2 py-0.5 text-xs font-semibold rounded bg-emerald-100 text-emerald-800">進行中</span>
+            </div>
+            <p id="current-project-memo" class="text-xs text-slate-500 mt-0.5">備考・工期</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="btn-manage-categories" class="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg border border-slate-300 transition-colors flex items-center">
+            <i class="fa-solid fa-tags mr-1.5 text-brand-500"></i> 種別の追加・設定
+          </button>
+          <button id="btn-open-import-modal" class="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold rounded-lg border border-emerald-300 transition-colors flex items-center shadow-sm">
+            <i class="fa-solid fa-file-excel mr-1.5 text-emerald-600 text-sm"></i> Excelファイル取込 / 貼付
+          </button>
+          <button id="btn-open-add-member" class="px-3 py-2 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center">
+            <i class="fa-solid fa-plus mr-1.5"></i> 部材1件追加
+          </button>
+          <button id="btn-delete-project-modal" class="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-xs font-bold rounded-lg transition-colors flex items-center" title="物件の削除またはアーカイブ">
+            <i class="fa-solid fa-trash-can mr-1.5"></i> 物件管理
+          </button>
+        </div>
+      </div>
+
+      <!-- メインビュー切り替えタブ（全部材・出荷進捗 vs 柱・コア加工進捗） -->
+      <div class="flex border-b border-slate-200 bg-white px-4 rounded-xl shadow-sm">
+        <button id="nav-tab-members" type="button" class="py-3 px-4 text-xs font-bold border-b-2 border-brand-500 text-brand-600 flex items-center space-x-2 transition-all">
+          <i class="fa-solid fa-cubes-stacked text-sm"></i>
+          <span>全部材・出荷進捗管理</span>
+          <span id="tab-badge-all-count" class="bg-brand-50 text-brand-700 text-[10px] px-2 py-0.5 rounded-full font-bold">0</span>
+        </button>
+        <button id="nav-tab-columns" type="button" class="py-3 px-4 text-xs font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center space-x-2 transition-all">
+          <i class="fa-solid fa-monument text-amber-600 text-sm"></i>
+          <span>柱・コア加工進捗リスト</span>
+          <span id="tab-badge-column-count" class="bg-amber-100 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-bold">0</span>
+        </button>
+      </div>
+
+      <!-- ① 全部材・出荷管理セクション -->
+      <div id="section-members-view" class="space-y-5">
+      <!-- Goodnotes共有URL 種別別クイックアクセスバー -->
+      <div class="bg-gradient-to-r from-slate-900 to-brand-600 text-white p-4 rounded-xl shadow-sm border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div class="flex items-center space-x-2.5">
+          <div class="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center font-bold text-sm border border-sky-400/30">
+            <i class="fa-solid fa-pen-nib"></i>
+          </div>
+          <div>
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-200">Goodnotes 図面クイックアクセス (ワンクリック全画面表示)</h3>
+            <p class="text-[11px] text-slate-300">種別ごとに設定されたURLをクリックすると、別タブで即座に図面が開きます。</p>
+          </div>
+        </div>
+
+        <div class="flex items-center flex-wrap gap-2">
+          <div id="goodnotes-links-list" class="flex flex-wrap items-center gap-1.5">
+            <!-- Dynamic Category Links Injected here -->
+          </div>
+          <button id="btn-manage-goodnotes-links" class="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-lg text-xs font-bold transition-all flex items-center">
+            <i class="fa-solid fa-gear mr-1.5"></i> 図面URL管理
+          </button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">総部材数</p>
+            <p id="kpi-total-members" class="text-2xl font-black text-slate-800 mt-0.5">0</p>
+          </div>
+          <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 font-bold">
+            <i class="fa-solid fa-cubes-stacked text-lg"></i>
+          </div>
+        </div>
+
+        <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-[11px] font-bold text-sky-600 uppercase tracking-wide">作図・承認完了</p>
+            <p id="kpi-draft-done" class="text-2xl font-black text-sky-600 mt-0.5">0</p>
+          </div>
+          <div class="w-10 h-10 rounded-lg bg-sky-50 flex items-center justify-center text-sky-600">
+            <i class="fa-solid fa-pen-ruler text-lg"></i>
+          </div>
+        </div>
+
+        <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-[11px] font-bold text-purple-600 uppercase tracking-wide">ヤード待機中</p>
+            <p id="kpi-in-yard" class="text-2xl font-black text-purple-600 mt-0.5">0</p>
+          </div>
+          <div class="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center text-purple-600">
+            <i class="fa-solid fa-warehouse text-lg"></i>
+          </div>
+        </div>
+
+        <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-[11px] font-bold text-emerald-600 uppercase tracking-wide">現場出荷済み</p>
+            <p id="kpi-shipped" class="text-2xl font-black text-emerald-600 mt-0.5">0</p>
+          </div>
+          <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+            <i class="fa-solid fa-truck-fast text-lg"></i>
+          </div>
+        </div>
+
+        <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between col-span-2 sm:col-span-1">
+          <div>
+            <p class="text-[11px] font-bold text-red-600 uppercase tracking-wide">保留・変更確認</p>
+            <p id="kpi-hold" class="text-2xl font-black text-red-600 mt-0.5">0</p>
+          </div>
+          <div class="w-10 h-10 rounded-lg bg-red-50 flex items-center justify-center text-red-600">
+            <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-3">
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-6 gap-3">
+          <!-- Text Search -->
+          <div class="relative md:col-span-2">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+            <input type="text" id="filter-search" placeholder="符号 / 工区 / 担当 / 保管場所 / 備考..." 
+                   class="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+          </div>
+
+          <!-- Category Filter (Dynamic) -->
+          <div>
+            <select id="filter-category" class="w-full py-2 px-3 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none bg-white">
+              <option value="ALL">部材種別: 全て</option>
+            </select>
+          </div>
+
+          <!-- Zone Filter (Dynamic) -->
+          <div>
+            <select id="filter-zone" class="w-full py-2 px-3 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none bg-white">
+              <option value="ALL">工区: 全て</option>
+            </select>
+          </div>
+
+          <!-- Drawing Status Filter -->
+          <div>
+            <select id="filter-draft-status" class="w-full py-2 px-3 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none bg-white">
+              <option value="ALL">加工図: 全て</option>
+              <option value="未着手">未着手</option>
+              <option value="作図中">作図中</option>
+              <option value="承認済">承認済</option>
+              <option value="保留">保留</option>
+            </select>
+          </div>
+
+          <!-- Shipping Status Filter -->
+          <div>
+            <select id="filter-ship-status" class="w-full py-2 px-3 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none bg-white">
+              <option value="ALL">出荷状況: 全て</option>
+              <option value="製作中">製作中</option>
+              <option value="ヤード待機">ヤード待機</option>
+              <option value="出荷済">出荷済</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Bulk Action Bar -->
+        <div id="bulk-action-bar" class="hidden flex-wrap items-center justify-between bg-amber-50 border border-amber-200 p-2.5 rounded-lg text-xs">
+          <div class="flex items-center space-x-2 font-bold text-amber-900">
+            <i class="fa-solid fa-check-double text-amber-600"></i>
+            <span>選択中: <span id="selected-count" class="text-amber-800 font-extrabold text-sm">0</span> 件</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
+            <span class="text-slate-600">一括更新:</span>
+            <button id="btn-bulk-ship" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold shadow-sm transition-colors">
+              <i class="fa-solid fa-truck-ramp-box mr-1"></i> 出荷済みに変更
+            </button>
+            <button id="btn-bulk-yard" class="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded font-bold shadow-sm transition-colors">
+              <i class="fa-solid fa-warehouse mr-1"></i> 保管ヤードを一括設定
+            </button>
+            <button id="btn-bulk-clear" class="px-2.5 py-1.5 bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 rounded font-medium">
+              選択解除
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+        <div class="overflow-x-auto min-h-[300px]">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-bold tracking-wider">
+              <tr>
+                <th class="py-3 px-3 w-10 text-center">
+                  <input type="checkbox" id="th-select-all" class="rounded border-slate-300 text-brand-500 focus:ring-brand-500 cursor-pointer">
+                </th>
+                <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors select-none sortable-th" data-sort="mark">
+                  <div class="flex items-center space-x-1">
+                    <span>部材符号</span>
+                    <span class="sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                  </div>
+                </th>
+                <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors select-none sortable-th" data-sort="category">
+                  <div class="flex items-center space-x-1">
+                    <span>種別</span>
+                    <span class="sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                  </div>
+                </th>
+                <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors select-none sortable-th" data-sort="zone">
+                  <div class="flex items-center space-x-1">
+                    <span>工区</span>
+                    <span class="sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                  </div>
+                </th>
+                <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors select-none sortable-th" data-sort="draft_status">
+                  <div class="flex items-center space-x-1">
+                    <span>加工図状況</span>
+                    <span class="sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                  </div>
+                </th>
+                <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors select-none sortable-th" data-sort="fabricator">
+                  <div class="flex items-center space-x-1">
+                    <span>担当者</span>
+                    <span class="sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                  </div>
+                </th>
+                <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors select-none sortable-th" data-sort="storage_loc">
+                  <div class="flex items-center space-x-1">
+                    <span>保管待機場所</span>
+                    <span class="sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                  </div>
+                </th>
+                <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors select-none sortable-th" data-sort="ship_status">
+                  <div class="flex items-center space-x-1">
+                    <span>現場出荷</span>
+                    <span class="sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                  </div>
+                </th>
+                <th class="py-3 px-3">備考</th>
+                <th class="py-3 px-3 text-right">削除</th>
+              </tr>
+            </thead>
+            <tbody id="member-table-body" class="divide-y divide-slate-100 text-slate-700">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+        <div id="table-footer-info" class="p-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex justify-between items-center">
+          <span>表示中: <span id="filtered-member-count" class="font-bold text-slate-700">0</span> 件</span>
+          <span class="text-[11px] text-slate-600">⚡ 項目名クリックで並び替え / 工区・担当・保管場所・備考は表上で直接編集できます</span>
+        </div>
+      </div>
+      </div>
+
+      <!-- ② 柱・コア加工状況専用セクション -->
+      <div id="section-columns-view" class="hidden space-y-5">
+        <!-- 柱専用 Goodnotes 共有URLバー（コア加工図 / 仕口加工図 / 大組図） -->
+        <div class="bg-slate-900 text-white p-4 rounded-xl shadow-sm border border-slate-800 space-y-3">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
+            <div class="flex items-center space-x-2">
+              <span class="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-xs border border-amber-500/30">
+                <i class="fa-solid fa-pen-nib"></i>
+              </span>
+              <div>
+                <h3 class="text-xs font-bold text-slate-100 uppercase tracking-wider">柱専用 Goodnotes 図面リンク (ワンクリック別タブ全画面表示)</h3>
+                <p class="text-[11px] text-slate-400">コア加工図・仕口加工図・大組図の共有URLを設定・直接アクセスできます</p>
+              </div>
+            </div>
+            <button id="btn-save-column-gn-links" class="self-end sm:self-auto px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold shadow transition-colors flex items-center">
+              <i class="fa-solid fa-floppy-disk mr-1.5"></i> URLを保存
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <!-- コア加工図 -->
+            <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-amber-400 flex items-center">
+                  <i class="fa-solid fa-circle-dot mr-1.5"></i> コア加工図
+                </span>
+                <a id="btn-open-gn-core" href="#" target="_blank" rel="noopener noreferrer" class="hidden text-xs bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-2.5 py-1 rounded shadow transition-all flex items-center">
+                  <span>図面を開く</span>
+                  <i class="fa-solid fa-arrow-up-right-from-square ml-1.5 text-[10px]"></i>
+                </a>
+              </div>
+              <input type="url" id="input-gn-core-url" placeholder="https://web.goodnotes.com/s/..." 
+                     class="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-xs text-slate-200 focus:border-amber-400 outline-none">
+            </div>
+
+            <!-- 仕口加工図 -->
+            <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-sky-400 flex items-center">
+                  <i class="fa-solid fa-puzzle-piece mr-1.5"></i> 仕口加工図
+                </span>
+                <a id="btn-open-gn-shikuchi" href="#" target="_blank" rel="noopener noreferrer" class="hidden text-xs bg-sky-400 hover:bg-sky-300 text-slate-950 font-bold px-2.5 py-1 rounded shadow transition-all flex items-center">
+                  <span>図面を開く</span>
+                  <i class="fa-solid fa-arrow-up-right-from-square ml-1.5 text-[10px]"></i>
+                </a>
+              </div>
+              <input type="url" id="input-gn-shikuchi-url" placeholder="https://web.goodnotes.com/s/..." 
+                     class="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-xs text-slate-200 focus:border-sky-400 outline-none">
+            </div>
+
+            <!-- 大組図 -->
+            <div class="bg-slate-800/80 p-3 rounded-lg border border-slate-700 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-emerald-400 flex items-center">
+                  <i class="fa-solid fa-monument mr-1.5"></i> 大組図
+                </span>
+                <a id="btn-open-gn-ogumi" href="#" target="_blank" rel="noopener noreferrer" class="hidden text-xs bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold px-2.5 py-1 rounded shadow transition-all flex items-center">
+                  <span>図面を開く</span>
+                  <i class="fa-solid fa-arrow-up-right-from-square ml-1.5 text-[10px]"></i>
+                </a>
+              </div>
+              <input type="url" id="input-gn-ogumi-url" placeholder="https://web.goodnotes.com/s/..." 
+                     class="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-xs text-slate-200 focus:border-emerald-400 outline-none">
+            </div>
+          </div>
+        </div>
+
+        <!-- 柱工程 KPIカード -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm">
+            <p class="text-[11px] font-bold text-slate-500 uppercase">管理柱 総数</p>
+            <p id="col-kpi-total" class="text-2xl font-black text-slate-800 mt-0.5">0</p>
+          </div>
+          <div class="bg-white p-3.5 rounded-xl border border-amber-200 shadow-sm">
+            <p class="text-[11px] font-bold text-amber-700 uppercase">① ダイアフラム加工中</p>
+            <p id="col-kpi-dia" class="text-2xl font-black text-amber-600 mt-0.5">0</p>
+          </div>
+          <div class="bg-white p-3.5 rounded-xl border border-sky-200 shadow-sm">
+            <p class="text-[11px] font-bold text-sky-700 uppercase">② コア加工中</p>
+            <p id="col-kpi-core" class="text-2xl font-black text-sky-600 mt-0.5">0</p>
+          </div>
+          <div class="bg-white p-3.5 rounded-xl border border-indigo-200 shadow-sm">
+            <p class="text-[11px] font-bold text-indigo-700 uppercase">③ BK取付中</p>
+            <p id="col-kpi-bk" class="text-2xl font-black text-indigo-600 mt-0.5">0</p>
+          </div>
+          <div class="bg-white p-3.5 rounded-xl border border-purple-200 shadow-sm">
+            <p class="text-[11px] font-bold text-purple-700 uppercase">④ 大組中</p>
+            <p id="col-kpi-ogumi" class="text-2xl font-black text-purple-600 mt-0.5">0</p>
+          </div>
+          <div class="bg-white p-3.5 rounded-xl border border-emerald-200 shadow-sm">
+            <p class="text-[11px] font-bold text-emerald-700 uppercase">⑤ 柱完了</p>
+            <p id="col-kpi-done" class="text-2xl font-black text-emerald-600 mt-0.5">0</p>
+          </div>
+        </div>
+
+        <!-- 柱登録 & フィルターツールバー -->
+        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div class="flex flex-1 items-center gap-3">
+            <div class="relative flex-1 max-w-sm">
+              <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-slate-400 text-sm"></i>
+              <input type="text" id="filter-column-search" placeholder="柱符号 / 工区 / 担当 / 備考..." 
+                     class="w-full pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-300 focus:ring-2 focus:ring-brand-500 outline-none">
+            </div>
+
+            <select id="filter-column-stage" class="py-2 px-3 text-sm rounded-lg border border-slate-300 bg-white outline-none">
+              <option value="ALL">工程: 全て</option>
+              <option value="未着手">未着手</option>
+              <option value="ダイアフラム加工中">ダイアフラム加工中</option>
+              <option value="コア加工中">コア加工中</option>
+              <option value="BK取り付け中">BK取り付け中</option>
+              <option value="大組中">大組中</option>
+              <option value="完了">完了</option>
+            </select>
+          </div>
+
+          <div class="flex items-center space-x-2">
+            <button id="btn-open-add-column" class="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center">
+              <i class="fa-solid fa-plus mr-1.5"></i> 柱・コアを新規登録
+            </button>
+          </div>
+        </div>
+
+        <!-- 柱・コア進捗テーブル -->
+        <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+          <div class="overflow-x-auto min-h-[300px]">
+            <table class="w-full text-left text-xs border-collapse">
+              <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 uppercase font-bold tracking-wider">
+                <tr>
+                  <th class="py-3 px-3 w-12 text-center">No.</th>
+                  <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors col-sortable-th" data-sort="name">
+                    <div class="flex items-center space-x-1">
+                      <span>柱・コア符号</span>
+                      <span class="col-sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                    </div>
+                  </th>
+                  <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors col-sortable-th" data-sort="zone">
+                    <div class="flex items-center space-x-1">
+                      <span>工区</span>
+                      <span class="col-sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                    </div>
+                  </th>
+                  <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors col-sortable-th" data-sort="stage">
+                    <div class="flex items-center space-x-1">
+                      <span>現在の加工工程 (ワンクリックで切替)</span>
+                      <span class="col-sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                    </div>
+                  </th>
+                  <th class="py-3 px-3">工程ステップ概要</th>
+                  <th class="py-3 px-3 cursor-pointer hover:bg-slate-100 transition-colors col-sortable-th" data-sort="fabricator">
+                    <div class="flex items-center space-x-1">
+                      <span>加工担当者</span>
+                      <span class="col-sort-icon text-[10px] text-slate-400"><i class="fa-solid fa-sort"></i></span>
+                    </div>
+                  </th>
+                  <th class="py-3 px-3">特記事項・備考</th>
+                  <th class="py-3 px-3 text-right">削除</th>
+                </tr>
+              </thead>
+              <tbody id="column-table-body" class="divide-y divide-slate-100 text-slate-700">
+                <!-- Rendered via JS -->
+              </tbody>
+            </table>
+          </div>
+          <div class="p-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex justify-between items-center">
+            <span>表示中: <span id="filtered-column-count" class="font-bold text-slate-700">0</span> 本</span>
+            <span class="text-[11px] text-slate-600">⚡ 工程バッジをクリックすると「ダイアフラム → コア → BK取付 → 大組 → 完了」と順次進みます</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal: 柱・コアの新規登録 -->
+  <div id="modal-add-column" class="fixed inset-0 z-50 hidden custom-backdrop flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+      <div class="bg-slate-900 text-white p-4 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-monument text-amber-400"></i>
+          <h3 class="font-bold text-base">柱・コアの登録</h3>
+        </div>
+        <button id="btn-close-add-column" class="text-white/80 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <form id="form-add-column" class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">柱・コア符号 <span class="text-red-500">*</span></label>
+          <input type="text" id="input-col-name" required placeholder="例: C1, C2-1, 1C-A" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none font-mono font-bold">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">工区</label>
+            <input type="text" id="input-col-zone" placeholder="例: 1工区, A工区" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">初期工程</label>
+            <select id="input-col-stage" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none bg-white">
+              <option value="未着手">未着手</option>
+              <option value="ダイアフラム加工中" selected>ダイアフラム加工中</option>
+              <option value="コア加工中">コア加工中</option>
+              <option value="BK取り付け中">BK取り付け中</option>
+              <option value="大組中">大組中</option>
+              <option value="完了">完了</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">加工担当者</label>
+          <select id="input-col-fabricator" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none bg-white">
+            <!-- Populated via JS -->
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">備考・仕様メモ</label>
+          <input type="text" id="input-col-notes" placeholder="例: 裏当て金仕様、仕口段差あり、通芯確認済" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-500 outline-none">
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-3">
+          <button type="button" id="btn-cancel-add-column" class="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100">キャンセル</button>
+          <button type="submit" class="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md">登録する</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: 種別の管理・追加 -->
+  <div id="modal-manage-categories" class="fixed inset-0 z-50 hidden custom-backdrop flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+      <div class="bg-brand-500 text-white p-4 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-tags text-amber-400"></i>
+          <h3 class="font-bold text-base">部材種別の管理・追加</h3>
+        </div>
+        <button id="btn-close-manage-categories" class="text-white/80 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">新しい種別名を追加</label>
+          <div class="flex space-x-2">
+            <input type="text" id="input-new-category" placeholder="例: ガセット, 階段ササラ, 母屋" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+            <button id="btn-add-category" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs rounded-lg transition-colors">追加</button>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1.5">登録済みの種別一覧</label>
+          <div id="category-badge-list" class="flex flex-wrap gap-2 max-h-48 overflow-y-auto p-2 border border-slate-200 rounded-lg bg-slate-50">
+            <!-- Badges rendered by JS -->
+          </div>
+        </div>
+
+        <div class="flex justify-end pt-2">
+          <button type="button" id="btn-done-categories" class="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-bold">完了</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Goodnotes 図面リンク管理 -->
+  <div id="modal-manage-goodnotes" class="fixed inset-0 z-50 hidden custom-backdrop flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-xl rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+      <div class="bg-slate-900 text-white p-4 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-pen-nib text-amber-400"></i>
+          <h3 class="font-bold text-base">種別ごとのGoodnotes図面URL設定</h3>
+        </div>
+        <button id="btn-close-manage-goodnotes" class="text-white/80 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <p class="text-xs text-slate-600">
+          「大梁加工図」「柱詳細図」など、自由に名前を付けてGoodnotes共有URLを設定できます。<br>
+          設定したボタンを押すと、ワンクリックで全画面別タブが開きます。
+        </p>
+
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+          <span class="text-xs font-bold text-slate-700">新規リンクの追加</span>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <input type="text" id="input-gn-name" placeholder="図面名 (例: 大梁加工図)" class="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg outline-none">
+            <input type="url" id="input-gn-url" placeholder="https://web.goodnotes.com/s/..." class="sm:col-span-2 px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg outline-none">
+          </div>
+          <div class="flex justify-end">
+            <button id="btn-add-gn-link" class="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 text-white text-xs font-bold rounded-lg transition-colors">
+              <i class="fa-solid fa-plus mr-1"></i> リストに追加
+            </button>
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <span class="text-xs font-bold text-slate-700">登録済みGoodnotesリンク</span>
+          <div id="gn-configured-list" class="space-y-2 max-h-56 overflow-y-auto">
+            <!-- List items injected via JS -->
+          </div>
+        </div>
+
+        <div class="flex justify-end pt-2">
+          <button type="button" id="btn-done-goodnotes" class="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold shadow">閉じる</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-member-edit" class="fixed inset-0 z-50 hidden custom-backdrop flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+      <div class="bg-brand-500 text-white p-4 flex items-center justify-between">
+        <h3 id="modal-member-title" class="font-bold text-base">部材情報の編集</h3>
+        <button id="btn-close-member-edit" class="text-white/80 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <form id="form-member-edit" class="p-6 space-y-4">
+        <input type="hidden" id="edit-member-id">
+        
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">部材符号 <span class="text-red-500">*</span></label>
+            <input type="text" id="edit-member-mark" required placeholder="例: 2G1-1, C1" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">種別</label>
+            <select id="edit-member-category" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none bg-white">
+              <!-- Dynamically populated -->
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">工区</label>
+            <input type="text" id="edit-member-zone" placeholder="例: 1工区, A工区" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">加工図ステータス</label>
+            <select id="edit-member-draft" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none bg-white">
+              <option value="未着手">未着手</option>
+              <option value="作図中">作図中</option>
+              <option value="承認済">承認済</option>
+              <option value="保留">保留</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">加工担当者</label>
+            <select id="edit-member-fabricator" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none bg-white">
+              <!-- Populated with registered staff -->
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">保管待機場所(ヤード)</label>
+            <input type="text" id="edit-member-storage" placeholder="例: 第1置場-A, 東ヤード" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">現場出荷ステータス</label>
+            <select id="edit-member-ship" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none bg-white">
+              <option value="製作中">製作中</option>
+              <option value="ヤード待機">ヤード待機</option>
+              <option value="出荷済">出荷済</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">備考・不備・保留理由</label>
+          <input type="text" id="edit-member-notes" placeholder="穴位置確認待ち、現場搬入日変更など" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-3">
+          <button type="button" id="btn-cancel-member-edit" class="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100">キャンセル</button>
+          <button type="submit" class="px-5 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-lg text-xs font-bold shadow-md">保存する</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-new-project" class="fixed inset-0 z-50 hidden custom-backdrop flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+      <div class="bg-brand-500 text-white p-5 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-folder-plus text-amber-400 text-lg"></i>
+          <h3 class="font-bold text-base">新規物件の追加登録</h3>
+        </div>
+        <button id="btn-close-new-project" class="text-slate-300 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <form id="form-new-project" class="p-6 space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">物件正式名称 <span class="text-red-500">*</span></label>
+          <input type="text" id="new-proj-name" required placeholder="例: 虎ノ門二丁目複合ビル新築工事" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">工事番号 / 現場コード</label>
+          <input type="text" id="new-proj-code" placeholder="例: K-2026-089" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-700 uppercase mb-1">備考・工期メモ</label>
+          <textarea id="new-proj-memo" rows="2" placeholder="工期、建方スケジュール、現場特記事項など" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none"></textarea>
+        </div>
+
+        <div class="flex justify-end space-x-3 pt-3">
+          <button type="button" id="btn-cancel-new-project" class="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100">キャンセル</button>
+          <button type="submit" class="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-bold shadow-md">作成する</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="modal-delete-project" class="fixed inset-0 z-50 hidden custom-backdrop flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-md rounded-2xl shadow-xl border border-red-200 overflow-hidden">
+      <div class="bg-red-600 text-white p-4 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+          <h3 class="font-bold text-base">物件の削除またはアーカイブ</h3>
+        </div>
+        <button id="btn-close-delete-project" class="text-white/80 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <p class="text-xs text-slate-600 leading-relaxed">
+          現場での誤操作を防ぐため、物理削除のほかに安全な「保管アーカイブ（非表示）」を推奨しています。
+        </p>
+
+        <div class="bg-red-50 border border-red-200 p-3 rounded-lg text-xs text-red-800 space-y-1">
+          <p class="font-bold">対象物件: <span id="delete-target-name" class="font-extrabold underline">---</span></p>
+          <p class="text-[11px] text-red-600">完全に削除する場合は、以下に物件名を正確に入力してください。</p>
+        </div>
+
+        <div>
+          <input type="text" id="input-confirm-delete-name" placeholder="確認のため物件名を入力" class="w-full px-3 py-2 border border-red-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none">
+        </div>
+
+        <div class="flex flex-col gap-2 pt-2">
+          <button id="btn-action-archive-project" class="w-full py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center">
+            <i class="fa-solid fa-box-archive mr-2"></i> 安全にアーカイブする（推奨）
+          </button>
+          <button id="btn-action-hard-delete-project" class="w-full py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center justify-center">
+            <i class="fa-solid fa-trash mr-2"></i> シートを完全物理削除
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-bulk-import" class="fixed inset-0 z-50 hidden custom-backdrop flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-2xl rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+      <div class="bg-brand-500 text-white p-4 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-file-excel text-emerald-300 text-lg"></i>
+          <h3 class="font-bold text-base">部材データの一括取込 (Excelファイル / コピペ対応)</h3>
+        </div>
+        <button id="btn-close-bulk-import" class="text-white/80 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4">
+        <!-- 案内バナー -->
+        <div class="bg-sky-50 border border-sky-200 p-3 rounded-lg text-xs text-sky-900 leading-relaxed">
+          <p class="font-bold mb-1"><i class="fa-solid fa-circle-info mr-1 text-sky-600"></i>Excelの列構成仕様:</p>
+          <div class="flex items-center space-x-4 font-mono text-[11px] text-slate-700">
+            <span><strong>A列</strong>: 部材符号（例: 2G1, C1）</span>
+            <span><strong>B列</strong>: 種別（例: 大梁, 柱）</span>
+            <span><strong>C列</strong>: 工区（例: 1工区, 2工区）</span>
+          </div>
+          <p class="mt-1 text-[11px] text-emerald-700 font-semibold">✨ 1行目の項目見出し（「部材符号」「種別」など）は自動で除外されます。未登録の種別は自動追加されます。</p>
+        </div>
+
+        <!-- タブ切替 -->
+        <div class="flex border-b border-slate-200">
+          <button id="tab-btn-file-upload" type="button" class="px-4 py-2 text-xs font-bold border-b-2 border-emerald-600 text-emerald-700 flex items-center space-x-1.5 focus:outline-none">
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+            <span>Excelファイルを直接アップロード</span>
+          </button>
+          <button id="tab-btn-text-paste" type="button" class="px-4 py-2 text-xs font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent flex items-center space-x-1.5 focus:outline-none">
+            <i class="fa-solid fa-paste"></i>
+            <span>テキスト貼り付け (コピペ)</span>
+          </button>
+        </div>
+
+        <!-- タブ1: ファイルアップロード -->
+        <div id="tab-content-file-upload" class="space-y-3">
+          <div id="excel-drop-zone" class="border-2 border-dashed border-slate-300 hover:border-emerald-500 bg-slate-50 hover:bg-emerald-50/40 rounded-xl p-6 text-center cursor-pointer transition-all">
+            <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv" class="hidden">
+            <i class="fa-solid fa-file-excel text-4xl text-emerald-600 mb-2"></i>
+            <p class="text-xs font-bold text-slate-700">ここにExcelファイル（.xlsx / .xls / .csv）をドラッグ＆ドロップ</p>
+            <p class="text-[11px] text-slate-400 mt-1">またはクリックしてファイルを選択</p>
+          </div>
+
+          <!-- 解析完了プレビュー表示領域 -->
+          <div id="excel-preview-container" class="hidden bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="font-bold text-slate-800">
+                <i class="fa-solid fa-circle-check text-emerald-600 mr-1"></i>
+                <span id="excel-file-name">filename.xlsx</span>
+                （検出: <span id="excel-parsed-count" class="text-emerald-700 font-extrabold">0</span> 件）
+              </span>
+              <button id="btn-clear-excel-file" type="button" class="text-[11px] text-red-500 hover:underline">
+                ファイルを解除
+              </button>
+            </div>
+            <div class="max-h-36 overflow-y-auto border border-slate-200 rounded bg-white">
+              <table class="w-full text-left text-[11px]">
+                <thead class="bg-slate-100 text-slate-600 border-b border-slate-200 sticky top-0">
+                  <tr>
+                    <th class="py-1 px-2.5">部材符号 (A列)</th>
+                    <th class="py-1 px-2.5">種別 (B列)</th>
+                    <th class="py-1 px-2.5">工区 (C列)</th>
+                  </tr>
+                </thead>
+                <tbody id="excel-preview-tbody" class="divide-y divide-slate-100 font-mono">
+                  <!-- Injected via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- タブ2: テキスト貼り付け -->
+        <div id="tab-content-text-paste" class="hidden space-y-2">
+          <textarea id="import-tsv-input" rows="7" placeholder="2G1	大梁	1工区
+2G2	大梁	1工区
+C1	柱	2工区
+C2	柱	2工区
+G-PL1	ガセットプレート	1工区" 
+                    class="w-full p-3 font-mono text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 outline-none"></textarea>
+          <div class="flex justify-between items-center">
+            <button type="button" id="btn-load-sample-import" class="text-xs text-brand-500 hover:underline">
+              サンプルテキストを挿入
+            </button>
+          </div>
+        </div>
+
+        <div class="flex justify-end items-center space-x-2 pt-2 border-t border-slate-100">
+          <button type="button" id="btn-cancel-bulk-import" class="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100">キャンセル</button>
+          <button type="button" id="btn-submit-bulk-import" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md flex items-center space-x-1.5">
+            <i class="fa-solid fa-arrow-down-to-bracket"></i>
+            <span>一括反映する</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-gas-settings" class="fixed inset-0 z-50 hidden custom-backdrop flex items-center justify-center p-4">
+    <div class="bg-white w-full max-w-lg rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col">
+      <div class="bg-brand-600 text-white p-4 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <i class="fa-solid fa-gear text-amber-400"></i>
+          <h3 class="font-bold text-base">Google Apps Script (GAS) 連携設定</h3>
+        </div>
+        <button id="btn-close-gas-settings" class="text-white/80 hover:text-white p-1">
+          <i class="fa-solid fa-xmark text-lg"></i>
+        </button>
+      </div>
+
+      <div class="p-6 space-y-4 text-xs text-slate-700">
+        <div class="space-y-2">
+          <label class="block font-bold text-slate-800">GAS Web App エンドポイントURL</label>
+          <div class="flex space-x-2">
+            <input type="url" id="input-gas-url" placeholder="https://script.google.com/macros/s/AKfycb.../exec" class="flex-1 px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-brand-500 text-xs">
+            <button id="btn-save-gas-url" class="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-bold rounded-lg transition-colors whitespace-nowrap">設定保存</button>
+          </div>
+          <p class="text-[11px] text-slate-500">※ スプレッドシートの「デプロイ」から発行されたWebアプリURLです。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Categories List
+    const DEFAULT_CATEGORIES = [
+      "大梁", "小梁", "柱", "間柱", "ブレース", "胴縁/小部材"
+    ];
+
+    // デフォルト加工担当者（_Fabricators シート初期値）
+    const DEFAULT_FABRICATORS = [
+      "佐藤 鉄男", "山田 健二", "鈴木 一郎", "高橋 昇"
+    ];
+
+    // 既定のGAS Web App エンドポイントURL（初期埋め込み）
+    const DEFAULT_GAS_ENDPOINT = "https://script.google.com/macros/s/AKfycbwhgZusH8WQSG561hEqLXmsqOHHutunlGfKU9YETzYUW2SFfEWZ7fsw0MaaWAgUqXSr/exec";
+
+    // セッション有効期限（24時間: ミリ秒換算）
+    const SESSION_DURATION_MS = 24 * 60 * 60 * 1000;
+
+    // State Variables
+    let currentUser = null;
+    let gasEndpoint = localStorage.getItem("steeltrack_gas_url") || DEFAULT_GAS_ENDPOINT;
+    let projects = JSON.parse(localStorage.getItem("steeltrack_projects")) || [];
+    let membersData = JSON.parse(localStorage.getItem("steeltrack_members")) || {};
+    let categoriesList = JSON.parse(localStorage.getItem("steeltrack_categories")) || DEFAULT_CATEGORIES;
+    let staffList = JSON.parse(localStorage.getItem("steeltrack_staff")) || [];
+    let fabricatorsList = JSON.parse(localStorage.getItem("steeltrack_fabricators")) || DEFAULT_FABRICATORS;
+    let goodnotesLinks = JSON.parse(localStorage.getItem("steeltrack_gn_links")) || {};
+
+    // 柱専用データ保持
+    let columnsData = JSON.parse(localStorage.getItem("steeltrack_columns")) || {};
+    let columnGnUrls = JSON.parse(localStorage.getItem("steeltrack_col_gn_urls")) || {};
+
+    let currentProjectId = null;
+    let selectedMemberIds = new Set();
+    let currentActiveTab = 'members'; // 'members' または 'columns'
+
+    // ソート状態管理 (初期値: 部材符号の昇順)
+    let currentSortColumn = "mark";
+    let currentSortDirection = "asc"; // 'asc' または 'desc'
+
+    // 柱ソート状態
+    let currentColSortColumn = "name";
+    let currentColSortDirection = "asc";
+
+    let activeImportTab = 'file'; // 'file' または 'paste'
+    let parsedExcelData = [];
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const colors = {
+        success: 'bg-emerald-600 text-white border-emerald-700',
+        error: 'bg-red-600 text-white border-red-700',
+        info: 'bg-slate-800 text-white border-slate-900',
+        warning: 'bg-amber-500 text-white border-amber-600'
+      };
+
+      const icons = {
+        success: 'fa-circle-check',
+        error: 'fa-circle-xmark',
+        info: 'fa-circle-info',
+        warning: 'fa-triangle-exclamation'
+      };
+
+      toast.className = `flex items-center space-x-3 px-4 py-3 rounded-xl shadow-lg border text-xs font-semibold transform transition-all duration-300 pointer-events-auto ${colors[type] || colors.info}`;
+      toast.innerHTML = `
+        <i class="fa-solid ${icons[type] || icons.info} text-base"></i>
+        <span>${escapeHtml(message)}</span>
+      `;
+
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-x-4');
+        setTimeout(() => toast.remove(), 300);
+      }, 3500);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function saveLocalStore() {
+      localStorage.setItem("steeltrack_projects", JSON.stringify(projects));
+      localStorage.setItem("steeltrack_members", JSON.stringify(membersData));
+      localStorage.setItem("steeltrack_categories", JSON.stringify(categoriesList));
+      localStorage.setItem("steeltrack_staff", JSON.stringify(staffList));
+      localStorage.setItem("steeltrack_fabricators", JSON.stringify(fabricatorsList));
+      localStorage.setItem("steeltrack_gn_links", JSON.stringify(goodnotesLinks));
+      localStorage.setItem("steeltrack_columns", JSON.stringify(columnsData));
+      localStorage.setItem("steeltrack_col_gn_urls", JSON.stringify(columnGnUrls));
+    }
+
+    // ヘッダーの同期状態表示を切り替えるヘルパー
+    function setSyncStatus(status, text) {
+      const badge = document.getElementById('connection-status-badge');
+      const dot = document.getElementById('connection-status-dot');
+      const label = document.getElementById('connection-status-text');
+      if (!badge || !dot || !label) return;
+
+      if (status === 'syncing') {
+        badge.className = "inline-flex items-center text-[11px] text-amber-300";
+        dot.className = "w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 animate-pulse";
+        label.textContent = text || "スプレッドシート同期中...";
+      } else if (status === 'synced') {
+        badge.className = "inline-flex items-center text-[11px] text-emerald-300";
+        dot.className = "w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1";
+        label.textContent = text || "最新データ同期済";
+      } else if (status === 'cached') {
+        badge.className = "inline-flex items-center text-[11px] text-sky-300";
+        dot.className = "w-1.5 h-1.5 rounded-full bg-sky-400 mr-1";
+        label.textContent = text || "キャッシュ表示中";
+      } else if (status === 'error') {
+        badge.className = "inline-flex items-center text-[11px] text-rose-300";
+        dot.className = "w-1.5 h-1.5 rounded-full bg-rose-400 mr-1";
+        label.textContent = text || "オフライン (ローカル)";
+      }
+    }
+
+    // 柱データの永続化
+    async function persistColumnsData() {
+      saveLocalStore();
+      if (currentProjectId) {
+        try {
+          await apiRequest("SAVE_COLUMNS", {
+            project_id: currentProjectId,
+            columns: columnsData[currentProjectId] || [],
+            col_gn_urls: columnGnUrls[currentProjectId] || { core: '', shikuchi: '', ogumi: '' }
+          });
+        } catch (e) {
+          console.warn("柱データバックエンド同期スキップ (ローカル保存完了):", e);
+        }
+      }
+    }
+
+    // 部材データの永続化 (ローカルストレージ保存 & GASスプレッドシート非同期同期)
+    async function persistMembersData() {
+      saveLocalStore();
+      if (currentProjectId) {
+        try {
+          await apiRequest("SAVE_ITEMS", {
+            project_id: currentProjectId,
+            items: membersData[currentProjectId] || []
+          });
+        } catch (e) {
+          console.warn("バックエンド同期スキップ (ローカル保存完了):", e);
+        }
+      }
+    }
+
+    // 一括操作バーの表示・選択件数更新
+    function updateBulkActionBar() {
+      const bar = document.getElementById('bulk-action-bar');
+      const countEl = document.getElementById('selected-count');
+      const count = selectedMemberIds.size;
+      if (countEl) countEl.textContent = count;
+      if (bar) {
+        if (count > 0) {
+          bar.classList.remove('hidden');
+          bar.classList.add('flex');
+        } else {
+          bar.classList.add('hidden');
+          bar.classList.remove('flex');
+        }
+      }
+    }
+
+    // GAS Web App へのPOSTリクエスト (スプレッドシート_Usersに登録された人のみ通過)
+    async function apiRequest(action, payload = {}) {
+      if (!gasEndpoint) {
+        throw new Error("GAS Web App URLが設定されていません。右上の設定からURLを確認してください。");
+      }
+
+      const body = {
+        action: action,
+        auth: {
+          name: currentUser ? currentUser.name : (document.getElementById('login-name')?.value.trim() || ''),
+          auth_code: currentUser ? currentUser.auth_code : (document.getElementById('login-code')?.value.trim() || '')
+        },
+        payload: payload
+      };
+
+      try {
+        const response = await fetch(gasEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(body)
+        });
+
+        if (!response.ok) throw new Error(`HTTPエラー: ${response.status}`);
+        const data = await response.json();
+        if (!data.success) throw new Error(data.message || '認証または処理に失敗しました');
+        return data;
+      } catch (err) {
+        console.warn("GAS通信エラー:", err);
+        throw err;
+      }
+    }
+
+    function switchView(viewName) {
+      document.getElementById('view-login').classList.add('hidden');
+      document.getElementById('view-dashboard').classList.add('hidden');
+      document.getElementById('view-project-detail').classList.add('hidden');
+
+      if (viewName === 'login') {
+        document.getElementById('view-login').classList.remove('hidden');
+        document.getElementById('header-user-panel').classList.add('hidden');
+      } else if (viewName === 'dashboard') {
+        document.getElementById('view-dashboard').classList.remove('hidden');
+        document.getElementById('header-user-panel').classList.remove('hidden');
+        loadProjectsView();
+      } else if (viewName === 'project-detail') {
+        document.getElementById('view-project-detail').classList.remove('hidden');
+        document.getElementById('header-user-panel').classList.remove('hidden');
+        renderProjectDetail();
+      }
+    }
+
+    // ログイン処理: スプレッドシートの _Users シートと完全に照合
+    document.getElementById('form-login').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('login-name').value.trim();
+      const code = document.getElementById('login-code').value.trim();
+
+      if (!name || !code) {
+        showToast("担当者名と認証コードを入力してください", "warning");
+        return;
+      }
+
+      const submitBtn = document.getElementById('btn-submit-login');
+      const originalText = submitBtn.innerHTML;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1.5"></i>スプレッドシート照合中...`;
+
+      try {
+        const res = await apiRequest("LOGIN", { name, auth_code: code });
+        currentUser = res.user;
+        if (res.staff_list) staffList = res.staff_list;
+        if (res.fabricators) fabricatorsList = res.fabricators;
+        if (res.categories) categoriesList = res.categories;
+        saveLocalStore();
+
+        // 🌟 端末別・24時間セッション保存処理
+        const expiryTimestamp = Date.now() + SESSION_DURATION_MS;
+        localStorage.setItem("steeltrack_session_user", JSON.stringify(currentUser));
+        localStorage.setItem("steeltrack_session_expiry", expiryTimestamp.toString());
+
+        document.getElementById('header-user-name').textContent = currentUser.name;
+        document.getElementById('header-user-role').textContent = (currentUser.role || 'STAFF').toUpperCase();
+
+        showToast(`認証成功: ${currentUser.name} さん（入場）※24時間有効`, "success");
+        switchView('dashboard');
+      } catch (err) {
+        showToast(`認証失敗: ${err.message || '担当者名またはコードが一致しません'}`, "error");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    });
+
+    // ログアウト処理（明示的に押した場合は端末セッションを破棄）
+    document.getElementById('btn-logout').addEventListener('click', () => {
+      currentUser = null;
+      selectedMemberIds.clear();
+
+      // 🌟 端末の保持セッションを破棄
+      localStorage.removeItem("steeltrack_session_user");
+      localStorage.removeItem("steeltrack_session_expiry");
+
+      const nameInput = document.getElementById('login-name');
+      const codeInput = document.getElementById('login-code');
+      if (nameInput) nameInput.value = "";
+      if (codeInput) codeInput.value = "";
+
+      switchView('login');
+      showToast("ログアウトしました（端末保持情報をクリアしました）", "info");
+    });
+
+    // 🌟 起動時の24時間セッション自動チェック
+    function checkAndRestoreSession() {
+      try {
+        const savedUserStr = localStorage.getItem("steeltrack_session_user");
+        const expiryStr = localStorage.getItem("steeltrack_session_expiry");
+
+        if (savedUserStr && expiryStr) {
+          const expiryTime = parseInt(expiryStr, 10);
+          const now = Date.now();
+
+          // 24時間以内であれば自動入場
+          if (now < expiryTime) {
+            currentUser = JSON.parse(savedUserStr);
+            document.getElementById('header-user-name').textContent = currentUser.name;
+            document.getElementById('header-user-role').textContent = (currentUser.role || 'STAFF').toUpperCase();
+
+            const remainHours = Math.max(1, Math.ceil((expiryTime - now) / (1000 * 60 * 60)));
+            showToast(`${currentUser.name} さんで自動入場しました（有効期限: 残り約${remainHours}時間）`, "success");
+
+            switchView('dashboard');
+            return true;
+          } else {
+            // 期限切れの場合
+            localStorage.removeItem("steeltrack_session_user");
+            localStorage.removeItem("steeltrack_session_expiry");
+            showToast("前回のログイン有効期限（24時間）が切れたため、再度認証してください", "info");
+          }
+        }
+      } catch (err) {
+        console.warn("セッション復元エラー:", err);
+      }
+      return false;
+    }
+
+    async function loadProjectsView() {
+      // 1. 【0秒表示】ローカルキャッシュに物件データがあれば即座に画面へ描画
+      if (projects && projects.length > 0) {
+        renderProjectCards();
+        setSyncStatus('syncing', '最新物件を確認中...');
+      } else {
+        // キャッシュが全くない初回のみローディングインジケーターを表示
+        const container = document.getElementById('project-cards-container');
+        container.innerHTML = '<div class="col-span-full py-12 text-center text-slate-400"><i class="fa-solid fa-spinner fa-spin text-2xl"></i><p class="mt-2 text-xs">スプレッドシートから物件データを取得中...</p></div>';
+        setSyncStatus('syncing', '物件データ取得中...');
+      }
+
+      // 2. 【裏で非同期通信】GASから最新データを取得して更新
+      try {
+        const res = await apiRequest("GET_PROJECTS");
+        projects = res.projects || [];
+        saveLocalStore();
+        renderProjectCards();
+        setSyncStatus('synced', '最新データ同期済');
+      } catch (err) {
+        console.warn("物件バックグラウンド同期失敗:", err);
+        setSyncStatus('cached', '前回データ表示中');
+        // キャッシュがない場合のみエラー通知
+        if (!projects || projects.length === 0) {
+          showToast(`物件データの取得に失敗しました: ${err.message}`, "error");
+          renderProjectCards();
+        }
+      }
+    }
+
+    function renderProjectCards() {
+      const container = document.getElementById('project-cards-container');
+      container.innerHTML = "";
+
+      const activeProjects = projects.filter(p => p.status !== "アーカイブ");
+      document.getElementById('badge-project-count').textContent = `${activeProjects.length} 物件`;
+
+      if (activeProjects.length === 0) {
+        container.innerHTML = `
+          <div class="col-span-full bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center">
+            <i class="fa-solid fa-folder-open text-4xl text-slate-300 mb-3"></i>
+            <p class="text-sm font-bold text-slate-600">登録されている物件がありません</p>
+            <p class="text-xs text-slate-400 mt-1">「新規物件登録」ボタンからスプレッドシートに新しい物件シートを作成してください。</p>
+          </div>
+        `;
+        return;
+      }
+
+      activeProjects.forEach(proj => {
+        const items = membersData[proj.project_id] || [];
+        const total = items.length;
+        const shippedCount = items.filter(i => i.ship_status === "出荷済").length;
+        const yardCount = items.filter(i => i.ship_status === "ヤード待機").length;
+        const progressPct = total > 0 ? Math.round((shippedCount / total) * 100) : 0;
+
+        const card = document.createElement('div');
+        card.className = "bg-white rounded-xl border border-slate-200 hover:border-brand-500/50 hover:shadow-md transition-all p-5 flex flex-col justify-between cursor-pointer group";
+        card.innerHTML = `
+          <div>
+            <div class="flex items-start justify-between">
+              <span class="text-[11px] font-bold bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded border border-slate-200 flex items-center">
+                <i class="fa-solid fa-building mr-1 text-slate-400"></i>
+                ${escapeHtml(proj.project_name)}
+              </span>
+              <span class="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                ${escapeHtml(proj.status)}
+              </span>
+            </div>
+            
+            <h3 class="font-bold text-base text-slate-900 group-hover:text-brand-500 transition-colors mt-2.5">
+              ${escapeHtml(proj.project_name)}
+            </h3>
+            <p class="text-xs text-slate-500 mt-1 line-clamp-2">${escapeHtml(proj.memo || "メモなし")}</p>
+          </div>
+
+          <div class="mt-6 pt-4 border-t border-slate-100 space-y-3">
+            <div>
+              <div class="flex justify-between text-xs mb-1">
+                <span class="text-slate-500 font-medium">現場出荷完了率</span>
+                <span class="font-bold text-slate-800">${progressPct}% (${shippedCount}/${total}本)</span>
+              </div>
+              <div class="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                <div class="h-full bg-emerald-500 rounded-full transition-all duration-500" style="width: ${progressPct}%"></div>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between text-[11px] text-slate-500">
+              <span><i class="fa-solid fa-warehouse mr-1 text-purple-500"></i>ヤード: <strong>${yardCount}</strong>本</span>
+              <span><i class="fa-solid fa-calendar-day mr-1 text-slate-400"></i>登録: ${escapeHtml(proj.created_at)}</span>
+            </div>
+          </div>
+        `;
+
+        card.addEventListener('click', () => {
+          currentProjectId = proj.project_id;
+          switchView('project-detail');
+        });
+
+        container.appendChild(card);
+      });
+    }
+
+    // Goodnotes共有URL: 種別別リンクの表示（別タブ全画面表示対応）
+    function renderGoodnotesQuickLinks() {
+      const container = document.getElementById('goodnotes-links-list');
+      container.innerHTML = "";
+
+      const links = goodnotesLinks[currentProjectId] || [];
+
+      if (links.length === 0) {
+        container.innerHTML = `
+          <span class="text-xs text-slate-400 italic">登録された図面URLがありません（「図面URL管理」から追加）</span>
+        `;
+        return;
+      }
+
+      links.forEach(l => {
+        const a = document.createElement('a');
+        a.href = l.url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.className = "inline-flex items-center px-3 py-1.5 bg-sky-500 hover:bg-sky-400 text-slate-900 rounded-lg text-xs font-bold shadow-sm transition-all";
+        a.title = `${l.name} を別タブで開く`;
+        a.innerHTML = `
+          <i class="fa-solid fa-file-pdf mr-1.5 text-slate-900"></i>
+          <span>${escapeHtml(l.name)}</span>
+          <i class="fa-solid fa-arrow-up-right-from-square ml-1.5 text-[10px] text-slate-800"></i>
+        `;
+        container.appendChild(a);
+      });
+    }
+
+    // 種別セレクトボックスの動的生成
+    function populateCategoryDropdowns() {
+      const filterSelect = document.getElementById('filter-category');
+      const editSelect = document.getElementById('edit-member-category');
+      
+      const currentFilterVal = filterSelect.value;
+      const currentEditVal = editSelect.value;
+
+      filterSelect.innerHTML = '<option value="ALL">部材種別: 全て</option>';
+      editSelect.innerHTML = '';
+
+      categoriesList.forEach(cat => {
+        const opt1 = document.createElement('option');
+        opt1.value = cat;
+        opt1.textContent = cat;
+        filterSelect.appendChild(opt1);
+
+        const opt2 = document.createElement('option');
+        opt2.value = cat;
+        opt2.textContent = cat;
+        editSelect.appendChild(opt2);
+      });
+
+      if (categoriesList.includes(currentFilterVal)) filterSelect.value = currentFilterVal;
+      if (categoriesList.includes(currentEditVal)) editSelect.value = currentEditVal;
+    }
+
+    // 工区フィルターの動的生成
+    function populateZoneDropdown() {
+      const filterZone = document.getElementById('filter-zone');
+      const currentVal = filterZone.value;
+      const items = membersData[currentProjectId] || [];
+      const zones = Array.from(new Set(items.map(i => i.zone).filter(Boolean))).sort(naturalCompare);
+
+      filterZone.innerHTML = '<option value="ALL">工区: 全て</option>';
+      zones.forEach(z => {
+        const opt = document.createElement('option');
+        opt.value = z;
+        opt.textContent = `工区: ${z}`;
+        filterZone.appendChild(opt);
+      });
+
+      if (zones.includes(currentVal)) filterZone.value = currentVal;
+    }
+
+    // 加工担当者セレクトボックスの動的生成（_Fabricators シート登録者）
+    function populateFabricatorDropdowns() {
+      const editFabSelect = document.getElementById('edit-member-fabricator');
+      const colFabSelect = document.getElementById('input-col-fabricator');
+      
+      const currentEditVal = editFabSelect ? editFabSelect.value : "";
+      const currentColVal = colFabSelect ? colFabSelect.value : "";
+
+      const generateOptions = () => {
+        if (fabricatorsList.length === 0) {
+          return '<option value="未定">未定</option>';
+        }
+        return fabricatorsList.map(name => `
+          <option value="${escapeHtml(name)}">${escapeHtml(name)}</option>
+        `).join('');
+      };
+
+      if (editFabSelect) {
+        editFabSelect.innerHTML = generateOptions();
+        if (currentEditVal && fabricatorsList.includes(currentEditVal)) {
+          editFabSelect.value = currentEditVal;
+        }
+      }
+
+      if (colFabSelect) {
+        colFabSelect.innerHTML = generateOptions();
+        if (currentColVal && fabricatorsList.includes(currentColVal)) {
+          colFabSelect.value = currentColVal;
+        }
+      }
+    }
+
+    async function renderProjectDetail() {
+      const proj = projects.find(p => p.project_id === currentProjectId);
+      if (!proj) return;
+
+      document.getElementById('current-project-name').textContent = proj.project_name;
+      document.getElementById('current-project-memo').textContent = proj.memo || "メモなし";
+      
+      selectedMemberIds.clear();
+      updateBulkActionBar();
+      populateCategoryDropdowns();
+      populateFabricatorDropdowns();
+      populateZoneDropdown();
+      renderGoodnotesQuickLinks();
+      renderColumnGnInputsAndLinks();
+
+      // 1. 【0秒表示】ローカルキャッシュにある部材・柱データを即座にテーブル描画
+      updateTabBadges();
+      applyFiltersAndRender();
+      applyColumnFiltersAndRender();
+      setSyncStatus('syncing', 'スプレッドシート同期中...');
+
+      // 2. 【裏で非同期通信】GASから最新データを取得して画面を更新
+      try {
+        const res = await apiRequest("GET_ITEMS", { project_id: currentProjectId });
+        membersData[currentProjectId] = res.items || [];
+        if (res.gn_links) goodnotesLinks[currentProjectId] = res.gn_links;
+        if (res.columns) columnsData[currentProjectId] = res.columns;
+        if (res.col_gn_urls) columnGnUrls[currentProjectId] = res.col_gn_urls;
+        if (res.categories) categoriesList = res.categories;
+        if (res.staff_list) staffList = res.staff_list;
+        if (res.fabricators && res.fabricators.length > 0) {
+          fabricatorsList = res.fabricators;
+        }
+        
+        saveLocalStore();
+        renderGoodnotesQuickLinks();
+        populateCategoryDropdowns();
+        populateFabricatorDropdowns();
+        populateZoneDropdown();
+        renderColumnGnInputsAndLinks();
+
+        updateTabBadges();
+        applyFiltersAndRender();
+        applyColumnFiltersAndRender();
+        setSyncStatus('synced', '最新データ同期済');
+      } catch (err) {
+        console.warn("部材データバックグラウンド同期失敗:", err);
+        setSyncStatus('cached', '前回データ表示中');
+      }
+    }
+
+    // タブ切替バッジカウントの更新
+    function updateTabBadges() {
+      const allMembers = membersData[currentProjectId] || [];
+      const colItems = columnsData[currentProjectId] || [];
+      const badgeAll = document.getElementById('tab-badge-all-count');
+      const badgeCol = document.getElementById('tab-badge-column-count');
+      if (badgeAll) badgeAll.textContent = allMembers.length;
+      if (badgeCol) badgeCol.textContent = colItems.length;
+    }
+
+    // タブ切り替え制御（全部材 vs 柱加工進捗）
+    const tabNavMembers = document.getElementById('nav-tab-members');
+    const tabNavColumns = document.getElementById('nav-tab-columns');
+    const secMembers = document.getElementById('section-members-view');
+    const secColumns = document.getElementById('section-columns-view');
+
+    tabNavMembers.addEventListener('click', () => {
+      currentActiveTab = 'members';
+      tabNavMembers.className = "py-3 px-4 text-xs font-bold border-b-2 border-brand-500 text-brand-600 flex items-center space-x-2 transition-all";
+      tabNavColumns.className = "py-3 px-4 text-xs font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center space-x-2 transition-all";
+      secMembers.classList.remove('hidden');
+      secColumns.classList.add('hidden');
+      applyFiltersAndRender();
+    });
+
+    tabNavColumns.addEventListener('click', () => {
+      currentActiveTab = 'columns';
+      tabNavColumns.className = "py-3 px-4 text-xs font-bold border-b-2 border-amber-500 text-amber-600 flex items-center space-x-2 transition-all";
+      tabNavMembers.className = "py-3 px-4 text-xs font-medium border-b-2 border-transparent text-slate-500 hover:text-slate-800 flex items-center space-x-2 transition-all";
+      secColumns.classList.remove('hidden');
+      secMembers.classList.add('hidden');
+      applyColumnFiltersAndRender();
+    });
+
+    // 柱専用 Goodnotes URL 入力とボタン表示
+    function renderColumnGnInputsAndLinks() {
+      const urls = columnGnUrls[currentProjectId] || { core: '', shikuchi: '', ogumi: '' };
+
+      const inputCore = document.getElementById('input-gn-core-url');
+      const inputShikuchi = document.getElementById('input-gn-shikuchi-url');
+      const inputOgumi = document.getElementById('input-gn-ogumi-url');
+
+      const btnCore = document.getElementById('btn-open-gn-core');
+      const btnShikuchi = document.getElementById('btn-open-gn-shikuchi');
+      const btnOgumi = document.getElementById('btn-open-gn-ogumi');
+
+      inputCore.value = urls.core || '';
+      inputShikuchi.value = urls.shikuchi || '';
+      inputOgumi.value = urls.ogumi || '';
+
+      if (urls.core) {
+        btnCore.href = urls.core;
+        btnCore.classList.remove('hidden');
+      } else {
+        btnCore.classList.add('hidden');
+      }
+
+      if (urls.shikuchi) {
+        btnShikuchi.href = urls.shikuchi;
+        btnShikuchi.classList.remove('hidden');
+      } else {
+        btnShikuchi.classList.add('hidden');
+      }
+
+      if (urls.ogumi) {
+        btnOgumi.href = urls.ogumi;
+        btnOgumi.classList.remove('hidden');
+      } else {
+        btnOgumi.classList.add('hidden');
+      }
+    }
+
+    // 柱Goodnotes URL保存ボタン
+    document.getElementById('btn-save-column-gn-links').addEventListener('click', async () => {
+      if (!currentProjectId) return;
+      const core = document.getElementById('input-gn-core-url').value.trim();
+      const shikuchi = document.getElementById('input-gn-shikuchi-url').value.trim();
+      const ogumi = document.getElementById('input-gn-ogumi-url').value.trim();
+
+      columnGnUrls[currentProjectId] = { core, shikuchi, ogumi };
+      await persistColumnsData();
+      renderColumnGnInputsAndLinks();
+      showToast("柱加工図Goodnotesリンク（コア/仕口/大組）を保存しました", "success");
+    });
+
+    // 柱工程順序定義
+    const COLUMN_STAGES = [
+      "未着手",
+      "ダイアフラム加工中",
+      "コア加工中",
+      "BK取り付け中",
+      "大組中",
+      "完了"
+    ];
+
+    // 柱フィルター＆ソート適用描画
+    function applyColumnFiltersAndRender() {
+      const items = columnsData[currentProjectId] || [];
+      const searchQuery = (document.getElementById('filter-column-search')?.value || '').toLowerCase().trim();
+      const stageFilter = document.getElementById('filter-column-stage')?.value || 'ALL';
+
+      // KPI 集計
+      document.getElementById('col-kpi-total').textContent = items.length;
+      document.getElementById('col-kpi-dia').textContent = items.filter(i => i.stage === "ダイアフラム加工中").length;
+      document.getElementById('col-kpi-core').textContent = items.filter(i => i.stage === "コア加工中").length;
+      document.getElementById('col-kpi-bk').textContent = items.filter(i => i.stage === "BK取り付け中").length;
+      document.getElementById('col-kpi-ogumi').textContent = items.filter(i => i.stage === "大組中").length;
+      document.getElementById('col-kpi-done').textContent = items.filter(i => i.stage === "完了").length;
+      updateTabBadges();
+
+      let filtered = items.filter(item => {
+        const matchSearch = !searchQuery ||
+          (item.name && item.name.toLowerCase().includes(searchQuery)) ||
+          (item.zone && item.zone.toLowerCase().includes(searchQuery)) ||
+          (item.fabricator && item.fabricator.toLowerCase().includes(searchQuery)) ||
+          (item.notes && item.notes.toLowerCase().includes(searchQuery));
+
+        const matchStage = stageFilter === "ALL" || item.stage === stageFilter;
+        return matchSearch && matchStage;
+      });
+
+      // 柱ソート適用
+      if (currentColSortColumn) {
+        filtered.sort((a, b) => {
+          let valA = a[currentColSortColumn] || '';
+          let valB = b[currentColSortColumn] || '';
+          if (currentColSortColumn === 'stage') {
+            valA = COLUMN_STAGES.indexOf(valA);
+            valB = COLUMN_STAGES.indexOf(valB);
+            return currentColSortDirection === 'asc' ? valA - valB : valB - valA;
+          }
+          let comp = naturalCompare(valA, valB);
+          return currentColSortDirection === 'asc' ? comp : -comp;
+        });
+      }
+
+      updateColSortHeadersUI();
+      renderColumnTable(filtered);
+    }
+
+    function updateColSortHeadersUI() {
+      document.querySelectorAll('.col-sortable-th').forEach(th => {
+        const col = th.getAttribute('data-sort');
+        const iconSpan = th.querySelector('.col-sort-icon');
+        if (col === currentColSortColumn) {
+          iconSpan.innerHTML = currentColSortDirection === 'asc' 
+            ? '<i class="fa-solid fa-arrow-up-short-wide text-amber-600 font-bold"></i>' 
+            : '<i class="fa-solid fa-arrow-down-wide-short text-amber-600 font-bold"></i>';
+        } else {
+          iconSpan.innerHTML = '<i class="fa-solid fa-sort text-slate-300"></i>';
+        }
+      });
+    }
+
+    document.querySelectorAll('.col-sortable-th').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.getAttribute('data-sort');
+        if (currentColSortColumn === col) {
+          currentColSortDirection = currentColSortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          currentColSortColumn = col;
+          currentColSortDirection = 'asc';
+        }
+        applyColumnFiltersAndRender();
+      });
+    });
+
+    ['filter-column-search', 'filter-column-stage'].forEach(id => {
+      document.getElementById(id)?.addEventListener('input', applyColumnFiltersAndRender);
+    });
+
+    // 柱工程バッジHTML生成 (押して順繰り切り替え)
+    function getColumnStageButton(id, stage) {
+      let badgeColor = "bg-slate-100 text-slate-600 border-slate-300";
+      let icon = "fa-clock";
+
+      if (stage === "ダイアフラム加工中") {
+        badgeColor = "bg-amber-100 text-amber-800 border-amber-300";
+        icon = "fa-circle-notch fa-spin";
+      } else if (stage === "コア加工中") {
+        badgeColor = "bg-sky-100 text-sky-800 border-sky-300";
+        icon = "fa-arrows-to-dot";
+      } else if (stage === "BK取り付け中") {
+        badgeColor = "bg-indigo-100 text-indigo-800 border-indigo-300";
+        icon = "fa-puzzle-piece";
+      } else if (stage === "大組中") {
+        badgeColor = "bg-purple-100 text-purple-800 border-purple-300";
+        icon = "fa-monument";
+      } else if (stage === "完了") {
+        badgeColor = "bg-emerald-100 text-emerald-800 border-emerald-300";
+        icon = "fa-circle-check";
+      }
+
+      return `
+        <button data-id="${id}" class="btn-cycle-col-stage inline-flex items-center px-3 py-1 rounded-lg text-xs font-bold border transition-transform active:scale-95 shadow-sm ${badgeColor}" title="クリックして次の工程に進める">
+          <i class="fa-solid ${icon} mr-1.5"></i>
+          <span>${escapeHtml(stage || "未着手")}</span>
+          <i class="fa-solid fa-arrows-rotate ml-2 text-[9px] opacity-60"></i>
+        </button>
+      `;
+    }
+
+    // 柱の進捗ステップバー視覚表示 (DF表記)
+    function getColumnProgressBar(stage) {
+      const idx = COLUMN_STAGES.indexOf(stage);
+      const steps = [
+        { label: "DF", name: "ダイアフラム" },
+        { label: "コア", name: "コア加工" },
+        { label: "BK", name: "BK取付" },
+        { label: "大組", name: "大組" }
+      ];
+
+      return `
+        <div class="flex items-center space-x-1 py-1">
+          ${steps.map((st, i) => {
+            const stepNum = i + 1; // 1:DF, 2:Core, 3:BK, 4:Ogumi
+            let dotClass = "bg-slate-200 text-slate-400";
+            if (idx === stepNum) dotClass = "bg-amber-500 text-white font-bold ring-2 ring-amber-300 animate-pulse";
+            else if (idx > stepNum || stage === "完了") dotClass = "bg-emerald-500 text-white";
+            return `
+              <div class="px-1.5 py-0.5 rounded text-[10px] ${dotClass}" title="${st.name}">
+                ${st.label}
+              </div>
+            `;
+          }).join('<i class="fa-solid fa-chevron-right text-[8px] text-slate-300"></i>')}
+        </div>
+      `;
+    }
+
+    // 柱テーブル描画
+    function renderColumnTable(items) {
+      const tbody = document.getElementById('column-table-body');
+      tbody.innerHTML = "";
+      document.getElementById('filtered-column-count').textContent = items.length;
+
+      if (items.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" class="py-12 text-center text-slate-400">
+              <i class="fa-solid fa-monument text-3xl mb-2 text-slate-300"></i>
+              <p class="text-xs">登録されている柱・コアはありません。「柱・コアを新規登録」から追加してください。</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      items.forEach((item, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-50 transition-colors";
+
+        const stageBtnHtml = getColumnStageButton(item.id, item.stage);
+        const stepBarHtml = getColumnProgressBar(item.stage);
+
+        const fabOptionsHtml = (fabricatorsList.length > 0 ? fabricatorsList : ["未定"]).map(name => `
+          <option value="${escapeHtml(name)}" ${item.fabricator === name ? 'selected' : ''}>
+            ${escapeHtml(name)}
+          </option>
+        `).join('');
+
+        tr.innerHTML = `
+          <td class="py-2.5 px-3 text-center text-slate-400 font-mono text-[11px]">${idx + 1}</td>
+          <td class="py-2.5 px-3 whitespace-nowrap min-w-[120px]">
+            <input type="text" data-id="${item.id}" data-field="name" value="${escapeHtml(item.name)}" 
+                   class="col-inline-input font-mono font-black text-slate-900 text-sm px-2 py-1 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-amber-500 rounded outline-none w-full">
+          </td>
+          <td class="py-2.5 px-3 whitespace-nowrap min-w-[90px]">
+            <input type="text" data-id="${item.id}" data-field="zone" value="${escapeHtml(item.zone || '')}" placeholder="工区未設定"
+                   class="col-inline-input text-xs font-semibold text-slate-700 px-2 py-1 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-amber-500 rounded outline-none w-full">
+          </td>
+          <td class="py-2.5 px-3 whitespace-nowrap">${stageBtnHtml}</td>
+          <td class="py-2.5 px-3 whitespace-nowrap">${stepBarHtml}</td>
+          <td class="py-2.5 px-3 whitespace-nowrap min-w-[110px]">
+            <select data-id="${item.id}" data-field="fabricator"
+                    class="col-inline-select text-xs font-medium text-slate-700 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 hover:border-slate-300 focus:border-amber-500 rounded px-2 py-1 outline-none cursor-pointer">
+              ${fabOptionsHtml}
+            </select>
+          </td>
+          <td class="py-2.5 px-3 min-w-[180px]">
+            <input type="text" data-id="${item.id}" data-field="notes" value="${escapeHtml(item.notes || '')}" placeholder="仕様・特記事項..."
+                   class="col-inline-input text-xs text-slate-600 px-2 py-1 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-amber-500 rounded outline-none w-full">
+          </td>
+          <td class="py-2.5 px-3 text-right whitespace-nowrap">
+            <button data-id="${item.id}" class="btn-del-single-col p-1.5 text-slate-300 hover:text-red-500 rounded hover:bg-slate-100 transition-colors" title="この柱を削除">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </td>
+        `;
+
+        tbody.appendChild(tr);
+      });
+
+      // 柱工程のワンクリック順繰り切替イベント
+      tbody.querySelectorAll('.btn-cycle-col-stage').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          await cycleColumnStage(id);
+        });
+      });
+
+      // 柱テーブルのインライン編集イベント（柱名、工区、備考）
+      tbody.querySelectorAll('.col-inline-input').forEach(input => {
+        input.addEventListener('change', async (e) => {
+          const id = e.target.getAttribute('data-id');
+          const field = e.target.getAttribute('data-field');
+          const val = e.target.value.trim();
+
+          const items = columnsData[currentProjectId];
+          const target = items.find(i => i.id === id);
+          if (target && target[field] !== val) {
+            target[field] = val;
+            await persistColumnsData();
+            showToast(`柱「${target.name}」の${field === 'name' ? '名称' : field === 'zone' ? '工区' : '備考'}を更新しました`, "info");
+          }
+        });
+      });
+
+      // 柱担当者インラインセレクト
+      tbody.querySelectorAll('.col-inline-select').forEach(sel => {
+        sel.addEventListener('change', async (e) => {
+          const id = e.target.getAttribute('data-id');
+          const val = e.target.value;
+
+          const items = columnsData[currentProjectId];
+          const target = items.find(i => i.id === id);
+          if (target && target.fabricator !== val) {
+            target.fabricator = val;
+            await persistColumnsData();
+            showToast(`柱「${target.name}」の担当者を「${val}」に更新しました`, "info");
+          }
+        });
+      });
+
+      // 柱の個別削除
+      tbody.querySelectorAll('.btn-del-single-col').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          const items = columnsData[currentProjectId];
+          const targetIdx = items.findIndex(i => i.id === id);
+          if (targetIdx !== -1) {
+            const name = items[targetIdx].name;
+            items.splice(targetIdx, 1);
+            await persistColumnsData();
+            applyColumnFiltersAndRender();
+            showToast(`柱「${name}」を削除しました`, "info");
+          }
+        });
+      });
+    }
+
+    // 柱工程をワンクリックで進める
+    async function cycleColumnStage(id) {
+      const items = columnsData[currentProjectId];
+      const target = items.find(i => i.id === id);
+      if (!target) return;
+
+      const curIdx = COLUMN_STAGES.indexOf(target.stage);
+      const nextIdx = (curIdx + 1) % COLUMN_STAGES.length;
+      target.stage = COLUMN_STAGES[nextIdx];
+
+      applyColumnFiltersAndRender();
+      await persistColumnsData();
+      showToast(`柱「${target.name}」の工程を「${target.stage}」に変更しました`, "success");
+    }
+
+    // 柱新規追加モーダル
+    const modalAddColumn = document.getElementById('modal-add-column');
+    const formAddColumn = document.getElementById('form-add-column');
+
+    document.getElementById('btn-open-add-column').addEventListener('click', () => {
+      document.getElementById('input-col-name').value = "";
+      document.getElementById('input-col-zone').value = "";
+      document.getElementById('input-col-stage').value = "ダイアフラム加工中";
+      document.getElementById('input-col-notes').value = "";
+
+      populateFabricatorDropdowns();
+      modalAddColumn.classList.remove('hidden');
+    });
+
+    document.getElementById('btn-close-add-column').addEventListener('click', () => {
+      modalAddColumn.classList.add('hidden');
+    });
+    document.getElementById('btn-cancel-add-column').addEventListener('click', () => {
+      modalAddColumn.classList.add('hidden');
+    });
+
+    formAddColumn.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('input-col-name').value.trim();
+      const zone = document.getElementById('input-col-zone').value.trim() || "1工区";
+      const stage = document.getElementById('input-col-stage').value;
+      const fabricator = document.getElementById('input-col-fabricator').value || fabricatorsList[0] || "未定";
+      const notes = document.getElementById('input-col-notes').value.trim();
+
+      if (!name) {
+        showToast("柱符号を入力してください", "warning");
+        return;
+      }
+
+      if (!columnsData[currentProjectId]) columnsData[currentProjectId] = [];
+
+      columnsData[currentProjectId].push({
+        id: "col-" + Date.now(),
+        name,
+        zone,
+        stage,
+        fabricator,
+        notes
+      });
+
+      await persistColumnsData();
+      applyColumnFiltersAndRender();
+      modalAddColumn.classList.add('hidden');
+      showToast(`柱「${name}」を登録しました`, "success");
+    });
+
+    // 自然順ソート用ヘルパー
+    function naturalCompare(a, b) {
+      return String(a || '').localeCompare(String(b || ''), undefined, {
+        numeric: true,
+        sensitivity: 'base'
+      });
+    }
+
+    function applyFiltersAndRender() {
+      const items = membersData[currentProjectId] || [];
+      const searchQuery = document.getElementById('filter-search').value.toLowerCase().trim();
+      const catFilter = document.getElementById('filter-category').value;
+      const zoneFilter = document.getElementById('filter-zone').value;
+      const draftFilter = document.getElementById('filter-draft-status').value;
+      const shipFilter = document.getElementById('filter-ship-status').value;
+
+      updateKpis(items);
+
+      let filtered = items.filter(item => {
+        const matchSearch = !searchQuery || 
+          (item.mark && item.mark.toLowerCase().includes(searchQuery)) ||
+          (item.zone && item.zone.toLowerCase().includes(searchQuery)) ||
+          (item.fabricator && item.fabricator.toLowerCase().includes(searchQuery)) ||
+          (item.storage_loc && item.storage_loc.toLowerCase().includes(searchQuery)) ||
+          (item.notes && item.notes.toLowerCase().includes(searchQuery));
+
+        const matchCat = catFilter === "ALL" || item.category === catFilter;
+        const matchZone = zoneFilter === "ALL" || item.zone === zoneFilter;
+        const matchDraft = draftFilter === "ALL" || item.draft_status === draftFilter;
+        const matchShip = shipFilter === "ALL" || item.ship_status === shipFilter;
+
+        return matchSearch && matchCat && matchZone && matchDraft && matchShip;
+      });
+
+      // ソートの適用
+      if (currentSortColumn) {
+        filtered.sort((a, b) => {
+          let valA = a[currentSortColumn] || '';
+          let valB = b[currentSortColumn] || '';
+          
+          let comp = naturalCompare(valA, valB);
+          return currentSortDirection === 'asc' ? comp : -comp;
+        });
+      }
+
+      updateSortHeadersUI();
+      renderMemberTable(filtered);
+    }
+
+    function updateSortHeadersUI() {
+      document.querySelectorAll('.sortable-th').forEach(th => {
+        const col = th.getAttribute('data-sort');
+        const iconSpan = th.querySelector('.sort-icon');
+        if (col === currentSortColumn) {
+          iconSpan.innerHTML = currentSortDirection === 'asc' 
+            ? '<i class="fa-solid fa-arrow-up-short-wide text-brand-600 font-bold"></i>' 
+            : '<i class="fa-solid fa-arrow-down-wide-short text-brand-600 font-bold"></i>';
+        } else {
+          iconSpan.innerHTML = '<i class="fa-solid fa-sort text-slate-300"></i>';
+        }
+      });
+    }
+
+    // テーブルヘッダーのソートイベントバインド
+    document.querySelectorAll('.sortable-th').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.getAttribute('data-sort');
+        if (currentSortColumn === col) {
+          currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+          currentSortColumn = col;
+          currentSortDirection = 'asc';
+        }
+        applyFiltersAndRender();
+      });
+    });
+
+    function updateKpis(items) {
+      document.getElementById('kpi-total-members').textContent = items.length;
+      document.getElementById('kpi-draft-done').textContent = items.filter(i => i.draft_status === "承認済").length;
+      document.getElementById('kpi-in-yard').textContent = items.filter(i => i.ship_status === "ヤード待機").length;
+      document.getElementById('kpi-shipped').textContent = items.filter(i => i.ship_status === "出荷済").length;
+      document.getElementById('kpi-hold').textContent = items.filter(i => i.draft_status === "保留").length;
+    }
+
+    // テーブル上で直接即時編集（担当者・工区・保管場所・備考・ステータス）
+    function renderMemberTable(items) {
+      const tbody = document.getElementById('member-table-body');
+      tbody.innerHTML = "";
+      document.getElementById('filtered-member-count').textContent = items.length;
+
+      if (items.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="10" class="py-12 text-center text-slate-400">
+              <i class="fa-solid fa-layer-group text-3xl mb-2"></i>
+              <p class="text-xs">条件に合致する部材は見つかりませんでした</p>
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      items.forEach(item => {
+        const isChecked = selectedMemberIds.has(item.item_id);
+        const tr = document.createElement('tr');
+        tr.className = `hover:bg-slate-50 transition-colors ${isChecked ? 'bg-amber-50/60' : ''}`;
+
+        const draftButtonHtml = getQuickDraftButton(item.item_id, item.draft_status);
+        const shipButtonHtml = getQuickShipButton(item.item_id, item.ship_status);
+
+        const fabOptionsHtml = (fabricatorsList.length > 0 ? fabricatorsList : ["未定"]).map(name => `
+          <option value="${escapeHtml(name)}" ${item.fabricator === name ? 'selected' : ''}>
+            ${escapeHtml(name)}
+          </option>
+        `).join('');
+
+        tr.innerHTML = `
+          <td class="py-2.5 px-3 text-center">
+            <input type="checkbox" data-id="${item.item_id}" class="row-checkbox rounded border-slate-300 text-brand-500 focus:ring-brand-500 cursor-pointer" ${isChecked ? 'checked' : ''}>
+          </td>
+          <td class="py-2.5 px-3 font-mono font-bold text-slate-900 text-sm whitespace-nowrap">
+            ${escapeHtml(item.mark)}
+          </td>
+          <td class="py-2.5 px-3 whitespace-nowrap">
+            <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700">
+              ${escapeHtml(item.category || "その他")}
+            </span>
+          </td>
+          <td class="py-2 px-2 whitespace-nowrap min-w-[90px]">
+            <input type="text" data-id="${item.item_id}" data-field="zone" value="${escapeHtml(item.zone || '')}" placeholder="工区未設定"
+                   class="inline-edit-input w-full px-2 py-1 text-xs font-semibold text-slate-700 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-brand-500 rounded outline-none transition-all">
+          </td>
+          <td class="py-2.5 px-3 whitespace-nowrap">${draftButtonHtml}</td>
+          <td class="py-2 px-2 whitespace-nowrap min-w-[110px]">
+            <select data-id="${item.item_id}" data-field="fabricator"
+                    class="inline-select-field text-xs font-medium text-slate-700 bg-slate-50 hover:bg-white focus:bg-white border border-slate-200 hover:border-slate-300 focus:border-brand-500 rounded px-2 py-1 outline-none transition-all cursor-pointer">
+              ${fabOptionsHtml}
+            </select>
+          </td>
+          <td class="py-2 px-2 min-w-[120px]">
+            <div class="flex items-center">
+              <i class="fa-solid fa-location-dot text-purple-400 mr-1 shrink-0 text-[11px]"></i>
+              <input type="text" data-id="${item.item_id}" data-field="storage_loc" value="${escapeHtml(item.storage_loc || '')}" placeholder="置場入力..."
+                     class="inline-edit-input w-full px-2 py-1 text-xs font-semibold text-purple-800 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-brand-500 rounded outline-none transition-all">
+            </div>
+          </td>
+          <td class="py-2.5 px-3 whitespace-nowrap">${shipButtonHtml}</td>
+          <td class="py-2 px-2 min-w-[140px]">
+            <input type="text" data-id="${item.item_id}" data-field="notes" value="${escapeHtml(item.notes || '')}" placeholder="備考..."
+                   class="inline-edit-input w-full px-2 py-1 text-xs text-slate-600 bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-brand-500 rounded outline-none transition-all">
+          </td>
+          <td class="py-2.5 px-3 text-right whitespace-nowrap">
+            <button data-id="${item.item_id}" class="btn-delete-single-item p-1.5 text-slate-300 hover:text-red-500 rounded hover:bg-slate-100 transition-colors" title="この部材を削除">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </td>
+        `;
+
+        tbody.appendChild(tr);
+      });
+
+      // Bind Row Checkbox
+      tbody.querySelectorAll('.row-checkbox').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+          const id = e.target.getAttribute('data-id');
+          if (e.target.checked) selectedMemberIds.add(id);
+          else selectedMemberIds.delete(id);
+          updateBulkActionBar();
+          applyFiltersAndRender();
+        });
+      });
+
+      // 加工図ステータス ワンクリック順繰り切替
+      tbody.querySelectorAll('.btn-cycle-draft').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          await cycleDraftStatus(id);
+        });
+      });
+
+      // 出荷ステータス ワンクリック順繰り切替
+      tbody.querySelectorAll('.btn-cycle-ship').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          await cycleShipStatus(id);
+        });
+      });
+
+      // インライン入力フィールドの変更監視（工区、保管場所、備考）
+      tbody.querySelectorAll('.inline-edit-input').forEach(input => {
+        input.addEventListener('change', async (e) => {
+          const id = e.target.getAttribute('data-id');
+          const field = e.target.getAttribute('data-field');
+          const val = e.target.value.trim();
+
+          const items = membersData[currentProjectId];
+          const target = items.find(i => i.item_id === id);
+          if (target && target[field] !== val) {
+            target[field] = val;
+            await persistMembersData();
+            showToast(`${target.mark} の ${getFieldLabel(field)} を更新しました`, "info");
+            if (field === 'zone') populateZoneDropdown();
+          }
+        });
+      });
+
+      // 担当者インラインセレクト変更監視
+      tbody.querySelectorAll('.inline-select-field').forEach(sel => {
+        sel.addEventListener('change', async (e) => {
+          const id = e.target.getAttribute('data-id');
+          const val = e.target.value;
+
+          const items = membersData[currentProjectId];
+          const target = items.find(i => i.item_id === id);
+          if (target && target.fabricator !== val) {
+            target.fabricator = val;
+            await persistMembersData();
+            showToast(`${target.mark} の担当者を「${val}」に更新しました`, "info");
+          }
+        });
+      });
+
+      // 個別部材削除
+      tbody.querySelectorAll('.btn-delete-single-item').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-id');
+          const items = membersData[currentProjectId];
+          const targetIdx = items.findIndex(i => i.item_id === id);
+          if (targetIdx !== -1) {
+            const mark = items[targetIdx].mark;
+            items.splice(targetIdx, 1);
+            selectedMemberIds.delete(id);
+            await persistMembersData();
+            populateZoneDropdown();
+            applyFiltersAndRender();
+            showToast(`部材「${mark}」を削除しました`, "info");
+          }
+        });
+      });
+    }
+
+    function getFieldLabel(f) {
+      if (f === 'zone') return '工区';
+      if (f === 'storage_loc') return '保管場所';
+      if (f === 'notes') return '備考';
+      return f;
+    }
+
+    // ステータス切替サイクル (未着手 -> 作図中 -> 承認済 -> 保留 -> 未着手)
+    async function cycleDraftStatus(itemId) {
+      const items = membersData[currentProjectId];
+      const target = items.find(i => i.item_id === itemId);
+      if (!target) return;
+
+      const order = ["未着手", "作図中", "承認済", "保留"];
+      const nextIdx = (order.indexOf(target.draft_status) + 1) % order.length;
+      target.draft_status = order[nextIdx];
+
+      applyFiltersAndRender();
+      await persistMembersData();
+      showToast(`${target.mark} の加工図を「${target.draft_status}」に変更`, "info");
+    }
+
+    // 出荷ステータス切替サイクル (製作中 -> ヤード待機 -> 出荷済 -> 製作中)
+    async function cycleShipStatus(itemId) {
+      const items = membersData[currentProjectId];
+      const target = items.find(i => i.item_id === itemId);
+      if (!target) return;
+
+      const order = ["製作中", "ヤード待機", "出荷済"];
+      const nextIdx = (order.indexOf(target.ship_status) + 1) % order.length;
+      target.ship_status = order[nextIdx];
+
+      applyFiltersAndRender();
+      await persistMembersData();
+      showToast(`${target.mark} の出荷状況を「${target.ship_status}」に変更`, "success");
+    }
+
+    function getQuickDraftButton(itemId, status) {
+      let badgeStyle = "bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-300";
+      let icon = "fa-circle-question";
+
+      if (status === "承認済") {
+        badgeStyle = "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border-emerald-300";
+        icon = "fa-check";
+      } else if (status === "作図中") {
+        badgeStyle = "bg-sky-100 text-sky-800 hover:bg-sky-200 border-sky-300";
+        icon = "fa-pen";
+      } else if (status === "保留") {
+        badgeStyle = "bg-red-100 text-red-800 hover:bg-red-200 border-red-300 animate-pulse";
+        icon = "fa-hand";
+      }
+
+      return `
+        <button data-id="${itemId}" class="btn-cycle-draft inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold border transition-transform active:scale-95 shadow-sm ${badgeStyle}" title="クリックして加工図ステータスを進める">
+          <i class="fa-solid ${icon} mr-1"></i>
+          <span>${escapeHtml(status || "未着手")}</span>
+          <i class="fa-solid fa-arrows-rotate ml-1 text-[9px] opacity-60"></i>
+        </button>
+      `;
+    }
+
+    function getQuickShipButton(itemId, status) {
+      let badgeStyle = "bg-amber-50 text-amber-700 hover:bg-amber-100 border-amber-200";
+      let icon = "fa-clock";
+
+      if (status === "出荷済") {
+        badgeStyle = "bg-emerald-600 text-white hover:bg-emerald-700 border-emerald-600";
+        icon = "fa-truck";
+      } else if (status === "ヤード待機") {
+        badgeStyle = "bg-purple-100 text-purple-800 hover:bg-purple-200 border-purple-300";
+        icon = "fa-warehouse";
+      }
+
+      return `
+        <button data-id="${itemId}" class="btn-cycle-ship inline-flex items-center px-2.5 py-0.5 rounded text-[11px] font-bold border transition-transform active:scale-95 shadow-sm ${badgeStyle}" title="クリックして出荷ステータスを進める">
+          <i class="fa-solid ${icon} mr-1"></i>
+          <span>${escapeHtml(status || "製作中")}</span>
+          <i class="fa-solid fa-arrows-rotate ml-1 text-[9px] opacity-60"></i>
+        </button>
+      `;
+    }
+
+    // 部材種別管理モーダル (追加・一覧・削除)
+    document.getElementById('btn-manage-categories').addEventListener('click', () => {
+      renderCategoryBadgeList();
+      document.getElementById('modal-manage-categories').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-close-manage-categories').addEventListener('click', () => {
+      document.getElementById('modal-manage-categories').classList.add('hidden');
+    });
+
+    document.getElementById('btn-done-categories').addEventListener('click', () => {
+      document.getElementById('modal-manage-categories').classList.add('hidden');
+    });
+
+    function renderCategoryBadgeList() {
+      const container = document.getElementById('category-badge-list');
+      container.innerHTML = "";
+
+      categoriesList.forEach((cat, idx) => {
+        const badge = document.createElement('div');
+        badge.className = "inline-flex items-center px-2.5 py-1 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold shadow-sm";
+        badge.innerHTML = `
+          <span>${escapeHtml(cat)}</span>
+          <button data-idx="${idx}" class="btn-del-category ml-2 text-slate-400 hover:text-red-500">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        `;
+        container.appendChild(badge);
+      });
+
+      container.querySelectorAll('.btn-del-category').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const idx = parseInt(btn.getAttribute('data-idx'));
+          const removed = categoriesList.splice(idx, 1);
+          saveLocalStore();
+          renderCategoryBadgeList();
+          populateCategoryDropdowns();
+          showToast(`種別「${removed}」を削除しました`, "info");
+          await apiRequest("SAVE_CATEGORIES", { categories: categoriesList }).catch(() => {});
+        });
+      });
+    }
+
+    document.getElementById('btn-add-category').addEventListener('click', async () => {
+      const input = document.getElementById('input-new-category');
+      const val = input.value.trim();
+      if (!val) return;
+
+      if (categoriesList.includes(val)) {
+        showToast("その種別は既に登録されています", "warning");
+        return;
+      }
+
+      categoriesList.push(val);
+      input.value = "";
+      saveLocalStore();
+      renderCategoryBadgeList();
+      populateCategoryDropdowns();
+      showToast(`種別「${val}」を追加しました`, "success");
+      await apiRequest("SAVE_CATEGORIES", { categories: categoriesList }).catch(() => {});
+    });
+
+    // Goodnotes 共有リンク管理モーダル
+    document.getElementById('btn-manage-goodnotes-links').addEventListener('click', () => {
+      renderGoodnotesAdminList();
+      document.getElementById('modal-manage-goodnotes').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-close-manage-goodnotes').addEventListener('click', () => {
+      document.getElementById('modal-manage-goodnotes').classList.add('hidden');
+    });
+
+    document.getElementById('btn-done-goodnotes').addEventListener('click', () => {
+      document.getElementById('modal-manage-goodnotes').classList.add('hidden');
+      renderGoodnotesQuickLinks();
+    });
+
+    function renderGoodnotesAdminList() {
+      const container = document.getElementById('gn-configured-list');
+      container.innerHTML = "";
+
+      const links = goodnotesLinks[currentProjectId] || [];
+
+      if (links.length === 0) {
+        container.innerHTML = `<p class="text-xs text-slate-400">現在登録されている図面リンクはありません</p>`;
+        return;
+      }
+
+      links.forEach((l, idx) => {
+        const row = document.createElement('div');
+        row.className = "flex items-center justify-between p-2.5 bg-white border border-slate-200 rounded-lg text-xs";
+        row.innerHTML = `
+          <div class="truncate max-w-[340px]">
+            <span class="font-bold text-slate-800">${escapeHtml(l.name)}</span>
+            <p class="text-[11px] text-sky-600 truncate">${escapeHtml(l.url)}</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <a href="${escapeHtml(l.url)}" target="_blank" class="p-1.5 text-slate-500 hover:text-sky-600" title="テストオープン">
+              <i class="fa-solid fa-arrow-up-right-from-square"></i>
+            </a>
+            <button data-idx="${idx}" class="btn-del-gn-link p-1.5 text-slate-400 hover:text-red-500" title="削除">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+
+      container.querySelectorAll('.btn-del-gn-link').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const idx = parseInt(btn.getAttribute('data-idx'));
+          goodnotesLinks[currentProjectId].splice(idx, 1);
+          saveLocalStore();
+          renderGoodnotesAdminList();
+          renderGoodnotesQuickLinks();
+          await apiRequest("SAVE_GN_LINKS", { project_id: currentProjectId, gn_links: goodnotesLinks[currentProjectId] }).catch(() => {});
+        });
+      });
+    }
+
+    document.getElementById('btn-add-gn-link').addEventListener('click', async () => {
+      const name = document.getElementById('input-gn-name').value.trim();
+      const url = document.getElementById('input-gn-url').value.trim();
+
+      if (!name || !url) {
+        showToast("図面名とURLを入力してください", "warning");
+        return;
+      }
+
+      if (!goodnotesLinks[currentProjectId]) goodnotesLinks[currentProjectId] = [];
+
+      goodnotesLinks[currentProjectId].push({
+        id: "gn-" + Date.now(),
+        name: name,
+        url: url
+      });
+
+      document.getElementById('input-gn-name').value = "";
+      document.getElementById('input-gn-url').value = "";
+      saveLocalStore();
+      renderGoodnotesAdminList();
+      renderGoodnotesQuickLinks();
+      showToast(`図面リンク「${name}」を追加しました`, "success");
+
+      await apiRequest("SAVE_GN_LINKS", { project_id: currentProjectId, gn_links: goodnotesLinks[currentProjectId] }).catch(() => {});
+    });
+
+    // Bulk Selection Handlers
+    ['filter-search', 'filter-category', 'filter-zone', 'filter-draft-status', 'filter-ship-status'].forEach(id => {
+      document.getElementById(id).addEventListener('input', applyFiltersAndRender);
+    });
+
+    document.getElementById('th-select-all').addEventListener('change', (e) => {
+      const items = membersData[currentProjectId] || [];
+      if (e.target.checked) {
+        items.forEach(i => selectedMemberIds.add(i.item_id));
+      } else {
+        selectedMemberIds.clear();
+      }
+      updateBulkActionBar();
+      applyFiltersAndRender();
+    });
+
+    const tabBtnFile = document.getElementById('tab-btn-file-upload');
+    const tabBtnPaste = document.getElementById('tab-btn-text-paste');
+    const tabContentFile = document.getElementById('tab-content-file-upload');
+    const tabContentPaste = document.getElementById('tab-content-text-paste');
+    const excelDropZone = document.getElementById('excel-drop-zone');
+    const excelFileInput = document.getElementById('excel-file-input');
+
+    function switchImportTab(tab) {
+      activeImportTab = tab;
+      if (tab === 'file') {
+        tabBtnFile.className = "px-4 py-2 text-xs font-bold border-b-2 border-emerald-600 text-emerald-700 flex items-center space-x-1.5 focus:outline-none";
+        tabBtnPaste.className = "px-4 py-2 text-xs font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent flex items-center space-x-1.5 focus:outline-none";
+        tabContentFile.classList.remove('hidden');
+        tabContentPaste.classList.add('hidden');
+      } else {
+        tabBtnPaste.className = "px-4 py-2 text-xs font-bold border-b-2 border-emerald-600 text-emerald-700 flex items-center space-x-1.5 focus:outline-none";
+        tabBtnFile.className = "px-4 py-2 text-xs font-medium text-slate-500 hover:text-slate-700 border-b-2 border-transparent flex items-center space-x-1.5 focus:outline-none";
+        tabContentPaste.classList.remove('hidden');
+        tabContentFile.classList.add('hidden');
+      }
+    }
+
+    tabBtnFile.addEventListener('click', () => switchImportTab('file'));
+    tabBtnPaste.addEventListener('click', () => switchImportTab('paste'));
+
+    // Excel Drag & Drop Events
+    excelDropZone.addEventListener('click', () => excelFileInput.click());
+    excelDropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      excelDropZone.classList.add('border-emerald-500', 'bg-emerald-50');
+    });
+    excelDropZone.addEventListener('dragleave', () => {
+      excelDropZone.classList.remove('border-emerald-500', 'bg-emerald-50');
+    });
+    excelDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      excelDropZone.classList.remove('border-emerald-500', 'bg-emerald-50');
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        processExcelFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    excelFileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        processExcelFile(e.target.files[0]);
+      }
+    });
+
+    document.getElementById('btn-clear-excel-file').addEventListener('click', () => {
+      parsedExcelData = [];
+      excelFileInput.value = '';
+      document.getElementById('excel-preview-container').classList.add('hidden');
+    });
+
+    function processExcelFile(file) {
+      if (!window.XLSX) {
+        showToast("Excel解析ライブラリが読み込まれていません", "error");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          
+          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+
+          if (!rows || rows.length === 0) {
+            showToast("ファイル内に有効なデータが見つかりませんでした", "warning");
+            return;
+          }
+
+          parsedExcelData = [];
+          const headerKeywords = ["符号", "部材", "mark", "種別", "カテゴリ", "工区", "zone", "category"];
+
+          rows.forEach((row, idx) => {
+            if (!row || row.length === 0) return;
+            const mark = String(row[0] || '').trim();
+            const category = String(row[1] || '').trim();
+            const zone = String(row[2] || '').trim();
+
+            if (!mark) return;
+
+            const isHeader = headerKeywords.some(kw => 
+              mark.toLowerCase().includes(kw) || 
+              category.toLowerCase().includes(kw) || 
+              zone.toLowerCase().includes(kw)
+            );
+
+            if (idx === 0 && isHeader) {
+              return;
+            }
+
+            parsedExcelData.push({
+              mark: mark,
+              category: category || "大梁",
+              zone: zone || "1工区"
+            });
+          });
+
+          if (parsedExcelData.length === 0) {
+            showToast("部材データが抽出できませんでした。A列に部材符号が入っているか確認してください。", "warning");
+            return;
+          }
+
+          // プレビュー表示
+          document.getElementById('excel-file-name').textContent = file.name;
+          document.getElementById('excel-parsed-count').textContent = parsedExcelData.length;
+          
+          const tbody = document.getElementById('excel-preview-tbody');
+          tbody.innerHTML = '';
+          
+          parsedExcelData.slice(0, 10).forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td class="py-1 px-2.5 font-bold text-slate-800">${escapeHtml(item.mark)}</td>
+              <td class="py-1 px-2.5 text-slate-600">${escapeHtml(item.category)}</td>
+              <td class="py-1 px-2.5 text-slate-600">${escapeHtml(item.zone)}</td>
+            `;
+            tbody.appendChild(tr);
+          });
+
+          if (parsedExcelData.length > 10) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td colspan="3" class="py-1 px-2.5 text-center text-slate-400 italic">他 ${parsedExcelData.length - 10} 件のデータ...</td>`;
+            tbody.appendChild(tr);
+          }
+
+          document.getElementById('excel-preview-container').classList.remove('hidden');
+          showToast(`「${file.name}」から ${parsedExcelData.length} 件の部材を検出しました`, "success");
+
+        } catch (err) {
+          console.error("Excel解析エラー:", err);
+          showToast("Excelファイルの読み込みに失敗しました", "error");
+        }
+      };
+
+      reader.readAsArrayBuffer(file);
+    }
+
+    document.getElementById('btn-open-import-modal').addEventListener('click', () => {
+      document.getElementById('import-tsv-input').value = "";
+      parsedExcelData = [];
+      excelFileInput.value = '';
+      document.getElementById('excel-preview-container').classList.add('hidden');
+      switchImportTab('file');
+      document.getElementById('modal-bulk-import').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-close-bulk-import').addEventListener('click', () => {
+      document.getElementById('modal-bulk-import').classList.add('hidden');
+    });
+    document.getElementById('btn-cancel-bulk-import').addEventListener('click', () => {
+      document.getElementById('modal-bulk-import').classList.add('hidden');
+    });
+
+    document.getElementById('btn-load-sample-import').addEventListener('click', () => {
+      document.getElementById('import-tsv-input').value = 
+`3G1	大梁	1工区
+3G2	大梁	1工区
+3G3	大梁	2工区
+C3	柱	1工区
+C4	柱	2工区
+SB-1	小梁	1工区
+PL-10	ガセットプレート	2工区
+SS-1	階段ササラ	3工区`;
+    });
+
+    document.getElementById('btn-submit-bulk-import').addEventListener('click', async () => {
+      let rawItems = [];
+
+      if (activeImportTab === 'file') {
+        if (parsedExcelData.length === 0) {
+          showToast("Excelファイルを選択またはドロップしてください", "warning");
+          return;
+        }
+        rawItems = parsedExcelData;
+      } else {
+        const text = document.getElementById('import-tsv-input').value.trim();
+        if (!text) {
+          showToast("貼り付けデータが空です", "warning");
+          return;
+        }
+
+        const lines = text.split('\n');
+        lines.forEach(line => {
+          if (!line.trim()) return;
+          const cols = line.includes('\t') ? line.split('\t').map(c => c.trim()) : line.split(',').map(c => c.trim());
+          const mark = cols[0];
+          const category = cols[1] || "大梁";
+          const zone = cols[2] || "1工区";
+          if (mark) {
+            rawItems.push({ mark, category, zone });
+          }
+        });
+      }
+
+      if (rawItems.length === 0) {
+        showToast("有効な部材データが検出できませんでした", "warning");
+        return;
+      }
+
+      const newItems = [];
+      let newCategoriesAdded = false;
+
+      rawItems.forEach((item, idx) => {
+        if (item.category && !categoriesList.includes(item.category)) {
+          categoriesList.push(item.category);
+          newCategoriesAdded = true;
+        }
+
+        newItems.push({
+          item_id: "itm-imp-" + Date.now() + "-" + idx,
+          mark: item.mark,
+          category: item.category,
+          zone: item.zone,
+          fabricator: fabricatorsList[0] || "未定",
+          storage_loc: "未定",
+          draft_status: "未着手",
+          ship_status: "製作中",
+          notes: activeImportTab === 'file' ? "Excelファイル取込" : "テキスト一括取込"
+        });
+      });
+
+      if (newCategoriesAdded) {
+        saveLocalStore();
+        populateCategoryDropdowns();
+        await apiRequest("SAVE_CATEGORIES", { categories: categoriesList }).catch(() => {});
+        showToast("未登録の種別を自動検出・追加登録しました", "info");
+      }
+
+      membersData[currentProjectId] = [...(membersData[currentProjectId] || []), ...newItems];
+      await persistMembersData();
+
+      populateZoneDropdown();
+      document.getElementById('modal-bulk-import').classList.add('hidden');
+      showToast(`${newItems.length}件の部材を取り込みました（A:符号 / B:種別 / C:工区）`, "success");
+      applyFiltersAndRender();
+    });
+
+    // 一括操作ボタンのイベントハンドラー
+    document.getElementById('btn-bulk-ship').addEventListener('click', async () => {
+      if (selectedMemberIds.size === 0) return;
+      const items = membersData[currentProjectId] || [];
+      let count = 0;
+      items.forEach(i => {
+        if (selectedMemberIds.has(i.item_id)) {
+          i.ship_status = '出荷済';
+          count++;
+        }
+      });
+      await persistMembersData();
+      applyFiltersAndRender();
+      showToast(`${count} 件の部材を「出荷済」に更新しました`, 'success');
+    });
+
+    document.getElementById('btn-bulk-yard').addEventListener('click', async () => {
+      if (selectedMemberIds.size === 0) return;
+      const items = membersData[currentProjectId] || [];
+      let count = 0;
+      items.forEach(i => {
+        if (selectedMemberIds.has(i.item_id)) {
+          i.ship_status = 'ヤード待機';
+          if (!i.storage_loc || i.storage_loc === '未定' || i.storage_loc === '材料置場') {
+            i.storage_loc = '東ヤード';
+          }
+          count++;
+        }
+      });
+      await persistMembersData();
+      applyFiltersAndRender();
+      showToast(`${count} 件の部材を「ヤード待機」に一括設定しました`, 'info');
+    });
+
+    document.getElementById('btn-bulk-clear').addEventListener('click', () => {
+      selectedMemberIds.clear();
+      const thCheck = document.getElementById('th-select-all');
+      if (thCheck) thCheck.checked = false;
+      updateBulkActionBar();
+      applyFiltersAndRender();
+    });
+
+    // 部材1件手動登録・編集モーダル制御
+    const modalMemberEdit = document.getElementById('modal-member-edit');
+    const formMemberEdit = document.getElementById('form-member-edit');
+
+    document.getElementById('btn-open-add-member').addEventListener('click', () => {
+      document.getElementById('modal-member-title').textContent = "部材1件追加";
+      document.getElementById('edit-member-id').value = "";
+      document.getElementById('edit-member-mark').value = "";
+      document.getElementById('edit-member-zone').value = "";
+      document.getElementById('edit-member-draft').value = "未着手";
+      document.getElementById('edit-member-storage').value = "";
+      document.getElementById('edit-member-ship').value = "製作中";
+      document.getElementById('edit-member-notes').value = "";
+      modalMemberEdit.classList.remove('hidden');
+    });
+
+    document.getElementById('btn-close-member-edit').addEventListener('click', () => {
+      modalMemberEdit.classList.add('hidden');
+    });
+
+    document.getElementById('btn-cancel-member-edit').addEventListener('click', () => {
+      modalMemberEdit.classList.add('hidden');
+    });
+
+    formMemberEdit.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const mark = document.getElementById('edit-member-mark').value.trim();
+      const category = document.getElementById('edit-member-category').value;
+      const zone = document.getElementById('edit-member-zone').value.trim() || "1工区";
+      const draft = document.getElementById('edit-member-draft').value;
+      const fabricator = document.getElementById('edit-member-fabricator').value || fabricatorsList[0] || "未定";
+      const storage = document.getElementById('edit-member-storage').value.trim() || "未定";
+      const ship = document.getElementById('edit-member-ship').value;
+      const notes = document.getElementById('edit-member-notes').value.trim();
+      const memberId = document.getElementById('edit-member-id').value;
+
+      if (!membersData[currentProjectId]) membersData[currentProjectId] = [];
+
+      if (memberId) {
+        const item = membersData[currentProjectId].find(i => i.item_id === memberId);
+        if (item) {
+          item.mark = mark;
+          item.category = category;
+          item.zone = zone;
+          item.draft_status = draft;
+          item.fabricator = fabricator;
+          item.storage_loc = storage;
+          item.ship_status = ship;
+          item.notes = notes;
+        }
+      } else {
+        membersData[currentProjectId].push({
+          item_id: "itm-" + Date.now(),
+          mark,
+          category,
+          zone,
+          draft_status: draft,
+          fabricator,
+          storage_loc: storage,
+          ship_status: ship,
+          notes
+        });
+      }
+
+      await persistMembersData();
+      populateZoneDropdown();
+      applyFiltersAndRender();
+      modalMemberEdit.classList.add('hidden');
+      showToast(`部材「${mark}」を保存しました`, 'success');
+    });
+
+    // Navigation Back and Projects
+    document.getElementById('btn-back-to-dashboard').addEventListener('click', () => {
+      switchView('dashboard');
+    });
+
+    document.getElementById('btn-new-project').addEventListener('click', () => {
+      document.getElementById('form-new-project').reset();
+      document.getElementById('modal-new-project').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-close-new-project').addEventListener('click', () => {
+      document.getElementById('modal-new-project').classList.add('hidden');
+    });
+    document.getElementById('btn-cancel-new-project').addEventListener('click', () => {
+      document.getElementById('modal-new-project').classList.add('hidden');
+    });
+
+    document.getElementById('form-new-project').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('new-proj-name').value.trim();
+      const memo = document.getElementById('new-proj-memo').value.trim();
+
+      try {
+        await apiRequest("CREATE_PROJECT", { project_name: name, memo: memo });
+        document.getElementById('modal-new-project').classList.add('hidden');
+        showToast("新規物件シートを作成しました", "success");
+        loadProjectsView();
+      } catch (err) {
+        showToast(`物件作成に失敗しました: ${err.message}`, "error");
+      }
+    });
+
+    // Delete Project Modal
+    document.getElementById('btn-delete-project-modal').addEventListener('click', () => {
+      const proj = projects.find(p => p.project_id === currentProjectId);
+      if (!proj) return;
+      document.getElementById('delete-target-name').textContent = proj.project_name;
+      document.getElementById('input-confirm-delete-name').value = "";
+      document.getElementById('modal-delete-project').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-close-delete-project').addEventListener('click', () => {
+      document.getElementById('modal-delete-project').classList.add('hidden');
+    });
+
+    document.getElementById('btn-action-archive-project').addEventListener('click', async () => {
+      try {
+        await apiRequest("ARCHIVE_PROJECT", { project_id: currentProjectId });
+        document.getElementById('modal-delete-project').classList.add('hidden');
+        showToast("物件をアーカイブしました", "info");
+        switchView('dashboard');
+      } catch (err) {
+        showToast(`アーカイブ処理に失敗しました: ${err.message}`, "error");
+      }
+    });
+
+    document.getElementById('btn-action-hard-delete-project').addEventListener('click', async () => {
+      const proj = projects.find(p => p.project_id === currentProjectId);
+      const input = document.getElementById('input-confirm-delete-name').value.trim();
+
+      if (input !== proj.project_name) {
+        showToast("確認用の物件名が一致していません", "warning");
+        return;
+      }
+
+      try {
+        await apiRequest("DELETE_PROJECT", { project_id: currentProjectId, confirmation_name: input });
+        document.getElementById('modal-delete-project').classList.add('hidden');
+        showToast("物件シートを完全に削除しました", "success");
+        switchView('dashboard');
+      } catch (err) {
+        showToast(`削除処理に失敗しました: ${err.message}`, "error");
+      }
+    });
+
+    document.getElementById('btn-open-gas-settings').addEventListener('click', () => {
+      document.getElementById('input-gas-url').value = gasEndpoint;
+      document.getElementById('modal-gas-settings').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-close-gas-settings').addEventListener('click', () => {
+      document.getElementById('modal-gas-settings').classList.add('hidden');
+    });
+
+    document.getElementById('btn-save-gas-url').addEventListener('click', () => {
+      const url = document.getElementById('input-gas-url').value.trim();
+      gasEndpoint = url;
+      localStorage.setItem("steeltrack_gas_url", url);
+      document.getElementById('modal-gas-settings').classList.add('hidden');
+      showToast("GASエンドポイントを保存しました", "success");
+    });
+
+    // 🌟 アプリ起動時処理の実行
+    window.addEventListener('DOMContentLoaded', () => {
+      const restored = checkAndRestoreSession();
+      if (!restored) {
+        switchView('login');
+      }
+    });
+  </script>
+</body>
+</html>
